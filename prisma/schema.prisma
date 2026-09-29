@@ -6,3 +6,61 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum OrganizationType {
+  DISTRIBUTOR
+  RETAILER
+}
+
+enum UserRole {
+  RETAILER
+  OPERATOR
+  ADMINISTRATOR
+}
+
+model Organization {
+  id        String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name      String
+  type      OrganizationType
+  isActive  Boolean          @default(true) @map("is_active")
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  users     User[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Stored lowercase; the unique index relies on that normalization.
+  email          String       @unique
+  displayName    String       @map("display_name")
+  passwordHash   String       @map("password_hash")
+  role           UserRole
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions       Session[]
+
+  @@index([organizationId])
+  @@map("users")
+}
+
+model Session {
+  id            String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  user          User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  tokenHash     String    @unique @map("token_hash")
+  /// Plain value: it must be returned to the client, and it is useless without the session cookie.
+  csrfToken     String    @map("csrf_token")
+  createdAt     DateTime  @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime  @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason String?   @map("revoked_reason")
+
+  @@index([userId])
+  @@map("sessions")
+}

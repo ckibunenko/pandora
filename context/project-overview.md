@@ -20,7 +20,7 @@ This overview defines the product baseline, target boundaries, and cross-cutting
 
 ## 2. Current implementation versus target architecture
 
-**Observed repository baseline on 2026-09-29:** the original Next.js starter has been replaced by the target stack as a pnpm workspace skeleton: `apps/web` (React/Vite), `apps/api` (NestJS), `packages/contracts`, `prisma/`, and Docker Compose with PostgreSQL. It contains only health checks, no business features. `AGENTS.md` describes the current commands and layout.
+**Observed repository baseline on 2026-09-29:** the original Next.js starter has been replaced by the target stack as a pnpm workspace skeleton: `apps/web` (React/Vite), `apps/api` (NestJS), `packages/contracts`, `prisma/`, and Docker Compose with PostgreSQL. It contains health checks and authentication (organizations, users, server-side sessions, role and CSRF guards, seeded demo accounts); no catalog, inventory, or order features yet. `AGENTS.md` describes the current commands and layout.
 
 **Target design inherited from the planning documents:** React/Vite frontend, NestJS backend, PostgreSQL, and Prisma. The skeleton follows this design; the parts listed below that are not yet built remain planned, not implemented.
 

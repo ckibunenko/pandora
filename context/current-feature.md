@@ -1,33 +1,59 @@
 ## Current Feature
 
-Architecture setup — replace the Next.js + Tailwind starter with the target pnpm monorepo skeleton (React/Vite web, NestJS API, shared contracts, Prisma/PostgreSQL), wired end to end through a health check. No business features.
+Authentication and sessions — organizations, users, and server-side sessions with login/logout, role checks, and CSRF protection, plus the API foundations every later endpoint relies on (error envelope, correlation IDs, Zod validation, OpenAPI). Seeded demo accounts for all three roles.
 
 ## Status 
 
-Completed
+In Progress
 
 ## Goals
 
-- Remove the Next.js starter (`src/`, `public/`, Next/Tailwind config and deps, `package-lock.json`).
-- Root pnpm workspace: pinned `packageManager`, strict `tsconfig.base.json`, ESLint flat config (`no-explicit-any` as error), `.nvmrc`, `.env.example`, `docker-compose.yml` with Postgres only.
-- `packages/contracts`: Zod health response schema shared by web and API.
-- `apps/api` (NestJS): Zod-validated startup config (`DATABASE_URL`, `PORT`), single `PrismaService`, `GET /health` and `GET /health/ready` (503 when the DB is unreachable).
-- `prisma/schema.prisma`: PostgreSQL datasource and generator, no models.
-- `apps/web` (Vite + React): React Router, TanStack Query, typed API client that parses responses with contract schemas, global design tokens, CSS Modules, home page with `<h1>Pandora</h1>` and API status.
-- Update `AGENTS.md` commands/architecture and the stale baseline notes in `project-overview.md`.
-- `pnpm typecheck`, `pnpm lint`, `pnpm build` pass; health endpoints verified against Postgres.
+- Postgres running locally via OrbStack + Docker Compose; `/api/health/ready` returns 200.
+- Contracts: error envelope, user role and organization type, login request, session response.
+- API foundations: correlation ID middleware, global exception filter (envelope with stable codes), `ZodValidationPipe` (422 with field details), injectable clock, JSON logs, OpenAPI at `/api/openapi.json` and `/api/docs` (non-production).
+- First migration: `Organization` (single distributor enforced), `User`, `Session` (only token hashes stored).
+- `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`; 30 min idle / 8 h absolute expiry; inactive user or organization cannot log in or use a session; argon2id passwords.
+- Global session guard (default deny), `RolesGuard` (403), `CsrfGuard` on unsafe methods (403).
+- Deterministic seed: distributor admin and operator, two retailer organizations, one inactive user; password from `SEED_USER_PASSWORD`.
+- Web: login page, protected home with current user and logout, session-aware API client with CSRF header, `data-test` selectors.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build` pass; curl and browser checks from the plan pass.
 
 ## Notes
 
-- Decisions (2026-09-29): follow the documented target architecture; use pnpm workspaces.
-- Deferred on purpose: error envelope, correlation IDs, sessions, OpenAPI (arrive with the first Phase 1 endpoints); Mailpit and notification worker (Phase 3).
-- Docker is required for Postgres and was not installed at the start of this task.
-- Branch: `feature/architecture-setup`.
-- Pinned versions: pnpm 12.8.1, TypeScript 6.0.3 (typescript-eslint does not support TS 7 yet), NestJS 12.1.1 (ESM), Prisma 7.10.0 (8.0 is still RC), Vite 8.3.1, React 19.3.0, React Router 8.4.0, Zod 4.6.5, Postgres 18.6.
-- Health endpoints are served under the `/api` prefix: `GET /api/health`, `GET /api/health/ready`. The `/api` prefix and the `API_PORT` variable name were accepted by the user (2026-09-29).
-- `README.md` rewritten for the new stack (replaces the create-next-app template).
-- Verified: `pnpm install`, `pnpm typecheck`, `pnpm lint`, `pnpm build` pass; API exits with a clear message when config is missing and does not print the DB URL; without a database `/api/health` returns 200 and `/api/health/ready` returns 503 while the API keeps running; `pnpm dev` in headless Chrome shows "Pandora" and "API running, database unavailable" through the Vite proxy.
-- Not yet verified (needs Docker): `/api/health/ready` returning 200 against a running Postgres.
+- Decisions (2026-09-30): auth and sessions is the next feature; Claude installs OrbStack via Homebrew.
+- Out of scope: admin organization/user management, deactivation and password-reset endpoints, audit log, role landing pages, automated tests.
+- `nestjs-zod` does not support NestJS 12, so validation uses a small in-repo pipe.
+- Branch: `feature/auth-sessions`.
+- Deviations from the plan:
+  - The CSRF token is stored in plain text (`sessions.csrf_token`), not hashed, because `GET /api/auth/session` must return it. It is useless without the session cookie, whose token is still stored only as a SHA-256 hash.
+  - IDs use Postgres 18's `uuidv7()` as the column default, so the database generates them. This also covers inserts made outside Prisma.
+  - `NODE_ENV` is now required config: it controls whether OpenAPI is served and blocks seeding in production.
+  - Framework 400 errors return a fixed message, because body-parser messages quote the raw request body, which could include a password.
+  - The `@scarf/scarf` install script (telemetry pulled in by `swagger-ui-dist`) is explicitly denied in `pnpm-workspace.yaml`.
+- Local database: OrbStack installed via Homebrew; the dev DB was reset once with the user's consent (Prisma requires it for AI agents).
+- Verified with curl (manual script):
+  - `/api/health/ready` returns 200 against Postgres.
+  - Login works, with `HttpOnly; SameSite=Lax` cookie and case-insensitive email.
+  - Wrong password, unknown email, inactive user, and inactive organization all return the same 401 `INVALID_CREDENTIALS`.
+  - Malformed JSON and form-encoded bodies return 400. Invalid email and unknown field return 422 with the field name.
+  - Session endpoint: 200 with a cookie; 401 without one or with a forged cookie.
+  - Logout returns 403 without or with a wrong CSRF header, 204 with the correct one, then the session returns 401.
+  - Idle over 30 minutes and past absolute expiry both return 401. Deactivating a user invalidates their live session immediately.
+  - A valid `X-Correlation-Id` is echoed, an invalid one is replaced, and an unknown route returns 404 `NOT_FOUND`.
+- Verified in the database: only a single distributor is allowed and emails must be lowercase (both enforced by the DB). Session token hashes are SHA-256 hex. Password hashes are argon2id. The seed is idempotent (ran twice, same data).
+- Verified in headless Chrome (18 checks, 4 consecutive runs):
+  - Signing out, or visiting `/` while signed out, redirects to `/login`.
+  - Tab order is email → password → submit, with a visible focus outline.
+  - A wrong password shows a generic error.
+  - Admin, operator, and retailer can each sign in, see their role and organization, keep the session across a reload, and sign out.
+- Logs are JSON, and no passwords, tokens, cookies, or hashes appear in them.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build` pass.
+- Not run: `db:reset` followed by `db:seed` (a second reset would need another consent). A fresh migration followed by a seed was verified once.
+- Known limitations (accepted for now):
+  - There is no login rate limiting or lockout; this is needed before a public demo exists.
+  - Expired and revoked session rows are never cleaned up.
+  - There are no automated tests yet.
+  - `.env.example` holds the development demo password, so the public demo must set its own `SEED_USER_PASSWORD`.
 
 ## History
 

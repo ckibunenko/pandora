@@ -6,16 +6,19 @@ It is not a real commerce service: there are no real payments, no real customer 
 
 ## Status
 
-The architecture skeleton is in place: web app, API, shared contracts, and database, connected end to end through a health check. Business features (catalog, inventory, orders, fulfillment) have not been built yet.
+Built so far:
 
-The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+- Architecture: web app, API, shared contracts, and PostgreSQL database.
+- Sign-in with server-side sessions for retailers, distributor operators, and administrators, using seeded demo accounts.
+
+Catalog, inventory, orders, and fulfillment have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
 ## Stack
 
 | Layer | Technology |
 |---|---|
 | Web | React, TypeScript, Vite, React Router, TanStack Query, CSS Modules |
-| API | NestJS, Zod |
+| API | NestJS, Zod, OpenAPI |
 | Database | PostgreSQL, Prisma |
 | Tooling | pnpm workspaces, ESLint, Docker Compose |
 
@@ -34,10 +37,21 @@ Requirements: Node 24, Docker, and pnpm (enable it with `corepack enable`).
 cp .env.example .env
 pnpm install
 docker compose up -d postgres
+pnpm --filter @pandora/api db:migrate
+pnpm --filter @pandora/api db:seed
 pnpm dev
 ```
 
-Open http://localhost:5173. The page shows whether the API and database are reachable. The API listens on `API_PORT` (3000 by default).
+Open http://localhost:5173 and sign in with a demo account. Every account uses the password set in `SEED_USER_PASSWORD` in your `.env`.
+
+| Email | Role |
+|---|---|
+| `admin@pandora.test` | Administrator |
+| `operator@pandora.test` | Distributor operator |
+| `retailer@tabletop-lantern.test` | Retailer (Tabletop Lantern) |
+| `retailer@cardboard-keep.test` | Retailer (Cardboard Keep) |
+
+Two more accounts exist for negative testing and cannot sign in: `former@tabletop-lantern.test` is an inactive user, and `retailer@closed-shelf.test` belongs to an inactive organization.
 
 ## Commands
 
@@ -47,8 +61,11 @@ Open http://localhost:5173. The page shows whether the API and database are reac
 | `pnpm build` | Build all packages |
 | `pnpm typecheck` | Type-check all packages |
 | `pnpm lint` | Lint the repository |
+| `pnpm --filter @pandora/api db:migrate` | Apply migrations to the development database |
+| `pnpm --filter @pandora/api db:seed` | Load the demo data (safe to run repeatedly) |
 
-Health endpoints:
+## API
 
-- `GET /api/health`: 200 while the API process is running
-- `GET /api/health/ready`: 200 when the database is reachable, 503 when it is not
+- OpenAPI document: http://localhost:3000/api/openapi.json (interactive docs at `/api/docs`; not served in production).
+- Errors share one shape: `{ code, message, correlation_id, details? }`. Every response carries an `X-Correlation-Id` header that matches `correlation_id`.
+- `GET /api/health` returns 200 while the API process is running. `GET /api/health/ready` returns 200 when the database is reachable and 503 when it is not.

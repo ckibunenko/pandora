@@ -19,6 +19,8 @@ Requires Node 24 (`.nvmrc`), pnpm via corepack (`corepack enable`; version pinne
 1. `cp .env.example .env` (repository root; `.env` is never committed)
 2. `pnpm install`
 3. `docker compose up -d postgres`
+4. `pnpm --filter @pandora/api db:migrate`
+5. `pnpm --filter @pandora/api db:seed`
 
 ## Commands
 
@@ -28,16 +30,37 @@ Run from the repository root:
 - `pnpm build` — build every workspace package
 - `pnpm typecheck` — strict TypeScript check of every package
 - `pnpm lint` — ESLint (flat config, `eslint.config.mjs`)
+- `pnpm --filter @pandora/api db:migrate` — create/apply migrations on the dev database (`prisma migrate dev`)
+- `pnpm --filter @pandora/api db:deploy` — apply committed migrations only (`prisma migrate deploy`)
+- `pnpm --filter @pandora/api db:reset` — drop and recreate the dev database; disposable databases only. Prisma refuses to run this for an AI agent without explicit user consent.
+- `pnpm --filter @pandora/api db:seed` — idempotent deterministic seed; refuses to run unless `NODE_ENV` is `development` or `test`
 - `pnpm --filter @pandora/api prisma <command>` — Prisma CLI (config: `apps/api/prisma.config.ts`, schema: `prisma/schema.prisma`)
 
+OpenAPI (non-production only): http://localhost:3000/api/openapi.json, UI at http://localhost:3000/api/docs.
+
 There is no test suite yet.
+
+## Demo accounts
+
+All seeded accounts use the password from `SEED_USER_PASSWORD` in `.env`.
+
+| Email | Role | Organization |
+|---|---|---|
+| `admin@pandora.test` | administrator | Pandora Distribution |
+| `operator@pandora.test` | operator | Pandora Distribution |
+| `retailer@tabletop-lantern.test` | retailer | Tabletop Lantern |
+| `retailer@cardboard-keep.test` | retailer | Cardboard Keep |
+| `former@tabletop-lantern.test` | retailer, inactive user | Tabletop Lantern |
+| `retailer@closed-shelf.test` | retailer | Closed Shelf Games (inactive organization) |
 
 ## Architecture
 
 pnpm workspace monorepo following the target in `context/coding-standards.md`:
 
-- `apps/web` — React + Vite, React Router, TanStack Query, CSS Modules; design tokens in `src/styles/global.css`. All HTTP goes through `src/lib/api-client.ts`, which parses responses with contract schemas.
+- `apps/web` — React + Vite, React Router, TanStack Query, CSS Modules; design tokens in `src/styles/global.css`. All HTTP goes through `src/lib/api-client.ts`, which parses responses with contract schemas, turns error envelopes into `ApiError`, and adds the CSRF header (token kept in memory only). Protected routes are nested under `RequireAuth` (`src/features/auth/`).
 - `apps/api` — NestJS (ESM) with global prefix `/api`. Startup config is validated with Zod in `src/common/config/app-config.ts` and the process exits if it is invalid. `PrismaService` (`src/infrastructure/prisma`) is the single Prisma client, using the `pg` driver adapter. Feature modules live in `src/modules/`.
+  - Cross-cutting pieces in `src/common/`: `ApiExceptionFilter` turns every error into the `{ code, message, correlation_id, details? }` envelope (throw `ApiException` for business errors); `ZodValidationPipe` validates input against contract schemas (422 with field details); `correlationIdMiddleware` sets `X-Correlation-Id`; inject `Clock` instead of calling `new Date()`; `openApiSchema()` documents endpoints from the same Zod schemas.
+  - Auth (`src/modules/auth/`): global guards run in order session → CSRF → roles. Every route requires a session unless marked `@Public()`; restrict by role with `@Roles(...)`; read the caller with `@CurrentAuth()`. Unsafe methods need the `X-CSRF-Token` header from the session response.
 - `packages/contracts` — Zod schemas and types shared by web and API. Build it before typechecking dependents (root scripts do this).
 - `prisma/` — schema and migrations. The Prisma 7 client is generated into `apps/api/src/generated/prisma` (gitignored) by `prisma generate`, which the API's `dev`/`build`/`typecheck` scripts run automatically.
 - `docker-compose.yml` — local PostgreSQL only.

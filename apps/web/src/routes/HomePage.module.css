@@ -3,18 +3,36 @@
   margin: 0 auto;
   padding: var(--space-8) var(--space-4);
   display: grid;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
-.status {
+.account {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding: var(--space-4) var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.meta {
   color: var(--color-text-muted);
   font-size: 0.875rem;
 }
 
-.up {
-  color: var(--color-success);
+.logout {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
-.down {
-  color: var(--color-danger);
+.logout:hover:not(:disabled) {
+  color: var(--color-on-primary);
+  background: var(--color-primary);
 }
