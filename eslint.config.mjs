@@ -1,18 +1,35 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
+import js from "@eslint/js";
+import reactHooks from "eslint-plugin-react-hooks";
+import reactRefresh from "eslint-plugin-react-refresh";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
-const eslintConfig = defineConfig([
-  ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
-]);
-
-export default eslintConfig;
+export default tseslint.config(
+  {
+    ignores: ["**/dist/**", "**/generated/**", "**/node_modules/**"],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/consistent-type-imports": "error",
+    },
+  },
+  {
+    files: ["apps/api/**/*.ts", "packages/**/*.ts", "**/*.config.{ts,mjs}"],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    // Nest DI needs constructor-injected classes as value imports for decorator metadata.
+    files: ["apps/api/**/*.ts"],
+    languageOptions: {
+      parserOptions: { emitDecoratorMetadata: true, experimentalDecorators: true },
+    },
+  },
+  {
+    files: ["apps/web/src/**/*.{ts,tsx}"],
+    languageOptions: { globals: globals.browser },
+    extends: [reactHooks.configs.flat["recommended-latest"], reactRefresh.configs.vite],
+  },
+);

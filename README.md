@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pandora
 
-## Getting Started
+Pandora is a B2B order and inventory management sandbox for a fictional board-game distributor that sells to retail stores. It is a portfolio project that demonstrates Senior QA work through a working application, explicit business rules, automated tests, and reproducible defects.
 
-First, run the development server:
+It is not a real commerce service: there are no real payments, no real customer data, and no AI features. All games, publishers, and artwork are fictional.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Status
+
+The architecture skeleton is in place: web app, API, shared contracts, and database, connected end to end through a health check. Business features (catalog, inventory, orders, fulfillment) have not been built yet.
+
+The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+
+## Stack
+
+| Layer | Technology |
+|---|---|
+| Web | React, TypeScript, Vite, React Router, TanStack Query, CSS Modules |
+| API | NestJS, Zod |
+| Database | PostgreSQL, Prisma |
+| Tooling | pnpm workspaces, ESLint, Docker Compose |
+
+```text
+apps/web            React frontend
+apps/api            NestJS API (served under /api)
+packages/contracts  Schemas shared by web and API
+prisma/             Database schema and migrations
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Getting started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Requirements: Node 24, Docker, and pnpm (enable it with `corepack enable`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env
+pnpm install
+docker compose up -d postgres
+pnpm dev
+```
 
-## Learn More
+Open http://localhost:5173. The page shows whether the API and database are reachable. The API listens on `API_PORT` (3000 by default).
 
-To learn more about Next.js, take a look at the following resources:
+## Commands
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Command | Description |
+|---|---|
+| `pnpm dev` | Start web and API in watch mode |
+| `pnpm build` | Build all packages |
+| `pnpm typecheck` | Type-check all packages |
+| `pnpm lint` | Lint the repository |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Health endpoints:
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `GET /api/health`: 200 while the API process is running
+- `GET /api/health/ready`: 200 when the database is reachable, 503 when it is not
