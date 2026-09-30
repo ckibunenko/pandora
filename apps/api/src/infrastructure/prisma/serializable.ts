@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { ApiException } from "../../common/errors/api-exception.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import type { PrismaService } from "./prisma.service.js";
@@ -40,6 +41,8 @@ export async function runSerializable<T>(
       if (attempt >= MAX_SERIALIZABLE_ATTEMPTS) {
         throw ApiException.concurrentModification();
       }
+      // A short random pause keeps two symmetric conflicting transactions from colliding again on every retry.
+      await delay(Math.floor(Math.random() * 20 * attempt) + 5);
     }
   }
 }

@@ -37,6 +37,21 @@ const state = async () => ({
   revoked: await db.session.count({ where: { revokedAt: { not: null } } }),
   audit: await auditCount(),
 });
+/**
+ * Two requests race to remove the last two administrators. At most one may succeed, never with a 500. Each loser is refused by:
+ * - the rule (LAST_ACTIVE_ADMINISTRATOR);
+ * - the session guard, when the winner demoted its caller first (UNAUTHENTICATED);
+ * - the bounded retry, when it kept losing serialization conflicts (CONCURRENT_MODIFICATION, overview §7).
+ * Returns the number of successes.
+ */
+function assertSafeRace(results) {
+  const successes = results.filter((r) => r.status === 200).length;
+  assert.ok(successes <= 1, JSON.stringify(results.map((r) => r.body)));
+  for (const result of results.filter((r) => r.status !== 200)) {
+    assert.ok(["LAST_ACTIVE_ADMINISTRATOR", "UNAUTHENTICATED", "CONCURRENT_MODIFICATION"].includes(result.body.code), JSON.stringify(result.body));
+  }
+  return successes;
+}
 const activeAdministrators = () =>
   db.user.count({ where: { role: "ADMINISTRATOR", isActive: true, organization: { type: "DISTRIBUTOR", isActive: true } } });
 
@@ -235,7 +250,7 @@ try {
     assert.equal((await loginWith("retailer@tabletop-lantern.test", process.env.SEED_USER_PASSWORD)).status, 200);
   });
 
-  await check("last administrator: cannot be deactivated or demoted; parallel demotions of two administrators leave exactly one", async () => {
+  await check("last administrator: cannot be deactivated or demoted; parallel demotions of two administrators never remove both", async () => {
     // The packer account is an operator again; the seeded admin is the only administrator.
     assert.equal(await activeAdministrators(), 1);
     const before = await state();
@@ -250,13 +265,8 @@ try {
       send(admin, "PATCH", `/admin/users/${ADMIN_ID}`, { role: "operator" }),
       send(admin, "PATCH", `/admin/users/${staffUser.id}`, { isActive: false }),
     ]);
-    const statuses = results.map((r) => r.status);
-    assert.equal(statuses.filter((s) => s === 200).length, 1, JSON.stringify(results.map((r) => r.body)));
-    for (const result of results.filter((r) => r.status !== 200)) {
-      // The losing request is refused by the rule, or by the session guard when the winner demoted its caller.
-      assert.ok(["LAST_ACTIVE_ADMINISTRATOR", "UNAUTHENTICATED"].includes(result.body.code), JSON.stringify(result.body));
-    }
-    assert.equal(await activeAdministrators(), 1);
+    const successes = assertSafeRace(results);
+    assert.equal(await activeAdministrators(), 2 - successes);
 
     // Restore the seeded administrator for later checks.
     if (results[0].status === 200) {
@@ -270,7 +280,7 @@ try {
     assert.equal(await activeAdministrators(), 1);
   });
 
-  await check("regression: serialization conflicts detected at COMMIT are retried (10 rounds, never a 500)", async () => {
+  await check("regression: serialization conflicts detected at COMMIT are retried (10 rounds, never a 500, never zero administrators)", async () => {
     // PostgreSQL reports this write skew at COMMIT; before the fix, runSerializable returned 500 instead of retrying.
     for (let round = 0; round < 10; round += 1) {
       await db.$executeRaw`UPDATE users SET role = 'ADMINISTRATOR' WHERE id = ${OPERATOR_ID}::uuid`;
@@ -278,11 +288,8 @@ try {
         send(admin, "PATCH", `/admin/users/${ADMIN_ID}`, { role: "operator" }),
         send(admin, "PATCH", `/admin/users/${OPERATOR_ID}`, { isActive: false }),
       ]);
-      assert.equal(results.filter((r) => r.status === 200).length, 1, JSON.stringify(results.map((r) => r.body)));
-      const loser = results.find((r) => r.status !== 200).body.code;
-      // UNAUTHENTICATED only when the winner demoted the caller before the loser passed the session guard.
-      assert.ok(["LAST_ACTIVE_ADMINISTRATOR", "UNAUTHENTICATED"].includes(loser), loser);
-      assert.equal(await activeAdministrators(), 1);
+      const successes = assertSafeRace(results);
+      assert.equal(await activeAdministrators(), 2 - successes);
       await db.$transaction([
         db.$executeRaw`UPDATE users SET role = 'ADMINISTRATOR', is_active = true WHERE id = ${ADMIN_ID}::uuid`,
         db.$executeRaw`UPDATE users SET role = 'OPERATOR', is_active = true WHERE id = ${OPERATOR_ID}::uuid`,

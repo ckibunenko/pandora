@@ -189,3 +189,5 @@ Intentional semantic-locator exceptions:
 - A self-demotion or self-deactivation signs the administrator out right after the successful save. The UI warns about this beforehand.
 - The Playwright catalog browser harness was not re-run. The shared navigation change is covered by the CDP suites above.
 - Still open: login rate limiting, session cleanup, test/CI setup, audit foreign keys, shared UI primitives, and demo reset automation.
+
+Follow-up (2026-09-30, found by CI on PR #2): the race checks now also accept `CONCURRENT_MODIFICATION` for the losing request. They require at most one success and never zero administrators. `runSerializable` now waits a short random time between retries; see [auth-hardening-verification.md](auth-hardening-verification.md).

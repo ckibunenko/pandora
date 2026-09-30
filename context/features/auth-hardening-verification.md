@@ -81,7 +81,14 @@ Correction during development: the first version of this browser check tagged me
 - **Timeout:** with `CHECK_SUITE_TIMEOUT_SECONDS=1`, the browser suite was killed: FAIL, exit 1, and no leftover Chrome, API, or web process.
 - **Development database:** the migration was applied with `db:deploy` (no reset), and `prisma migrate diff` is empty. After a dev-server restart, sign-in and the admin smoke test work.
 - **Screenshot inspected:** the lockout message on the sign-in page.
-- **Final gates:** `pnpm typecheck`, `pnpm lint`, and `pnpm build` pass. CI is recorded after the pull request runs.
+- **Final gates:** `pnpm typecheck`, `pnpm lint`, and `pnpm build` pass.
+- **First CI run on PR #2** (`36768528532`): gates, browser, and 7 of 8 API suites passed. `api:admin` failed in its 10-round administrator race.
+  - One request lost the serialization conflict three times in a row and got 409 `CONCURRENT_MODIFICATION`. This is the defined behavior after bounded retry (overview §7), and data stayed consistent.
+  - Two causes:
+    - `runSerializable` retried immediately, so two symmetric transactions could collide again on every attempt. It now waits a short random time (5–25 ms × attempt) between retries.
+    - The admin check accepted only `LAST_ACTIVE_ADMINISTRATOR` and `UNAUTHENTICATED` for the losing request. It now also accepts `CONCURRENT_MODIFICATION`.
+  - The check still requires no 500, at most one success, and never zero administrators.
+  - Afterwards, admin passed 6 of 6 fresh-database runs, and all 8 API suites passed.
 
 ## Limitations and follow-ups
 
