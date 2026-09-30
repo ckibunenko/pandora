@@ -10,6 +10,11 @@ export const ERROR_CODES = {
   csrfTokenInvalid: "CSRF_TOKEN_INVALID",
   notFound: "NOT_FOUND",
   internalError: "INTERNAL_ERROR",
+  insufficientStock: "INSUFFICIENT_STOCK",
+  idempotencyKeyRequired: "IDEMPOTENCY_KEY_REQUIRED",
+  idempotencyKeyReused: "IDEMPOTENCY_KEY_REUSED",
+  requestInProgress: "REQUEST_IN_PROGRESS",
+  concurrentModification: "CONCURRENT_MODIFICATION",
 } as const;
 
 export const errorDetailSchema = z.object({

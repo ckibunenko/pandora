@@ -1,153 +1,128 @@
 ## Current Feature
 
-Catalog — fictional board games and expansions, sellable language/edition variants, authenticated browsing, and administrator-only catalog management.
+Inventory — stock per SKU (sellable, reserved, damaged) in the single warehouse, stock receipts and manual adjustments by distributor staff, immutable inventory movements with audit, and available quantity shown in the catalog. This introduces the consistency machinery that every later stock workflow reuses: `Idempotency-Key` handling and Serializable transactions with bounded retry.
 
 ## Status
 
-Completed — merged to `main` as `25153bd` (2026-09-30).
+Implemented and verified on `feature/inventory`. Waiting for the user's permission to commit.
 
 ## Goal
 
-A signed-in retailer or staff member can browse active products, open a product, explicitly select a variant, and see its SKU, language, edition, and price. An administrator can create, edit, activate, and deactivate catalog records. Changes persist with essential audit records.
+A distributor operator or administrator can see stock for every SKU, record a stock receipt, and record a manual adjustment with a reason. Every change produces an inventory movement and an audit event in the same transaction, and retried requests never apply twice. Retailers and staff see each variant's available quantity in the catalog.
 
 ## Scope and decisions (2026-09-30)
 
-- Next feature selected after authentication and sessions. Branch: `feature/catalog` (created during specification preparation).
-- Defaults implemented under the user's instruction to proceed: EUR as the single configured currency; the fictional seed catalog below.
-- Configure `CATALOG_CURRENCY=EUR` on the API, validate it at startup, and return currency with catalog prices. This slice supports EUR only, with two decimal places; currency conversion and runtime currency changes are out of scope.
-- Prices are integer minor units (`unitPriceMinor`), including zero, bounded by the PostgreSQL signed integer range (0–2,147,483,647). Never compute currency values with floating-point arithmetic.
-- No inventory records, availability labels, quantity input, add-to-order action, drafts, or reservations in this feature. Availability is added when real inventory exists.
-- No organization/user administration, order workflow, notifications, Bug Lab, public deployment, image uploads, or audit search UI.
-- Preserve the existing authentication/session contracts and demo accounts.
+- Branch: `feature/inventory`.
+- Retailers see the exact available quantity (`sellable − reserved`) for each variant, with a note that availability is not a guarantee until an order is confirmed. User decision, 2026-09-30.
+- Receipts and adjustments: operator and administrator (overview §3). Retailers get 403 on all inventory endpoints; the catalog availability is their only view of stock.
+- `reserved` exists and is enforced now, but stays 0 until order confirmation is built. Nothing in this feature changes it.
+- Out of scope: reservations, orders, shipments, returns, damaged-stock disposal workflow, stock counts/cycle counting, multiple warehouses, notifications, audit search UI.
+- Stock can be received and adjusted for inactive products and variants: physical stock exists regardless of catalog visibility.
 
 ## Data and invariants
 
-### Product
+### InventoryItem (one per variant)
 
-- UUID generated using the existing database convention; name (1–120 characters), fictional publisher (1–120), description (1–2,000), type (`base_game` or `expansion`), optional base product reference, active flag, creation/update timestamps.
-- Trim text before validating length; reject blank values and unexpected mutation fields.
-- A base game has no base product reference. An expansion references an existing base game, never itself or an expansion.
-- Product type and base product reference are fixed after creation for this slice. This keeps the relationship valid while products are edited concurrently.
-- Deactivating a base game does not deactivate its expansions: the base game is not required for purchasing an expansion. Browsing an expansion may show its base game's ID and name as relationship metadata, but must not expose inactive variants or offer an unavailable detail link.
-- No hard delete. Deactivation preserves IDs and relationships for future order history.
+- Keyed by variant ID. Quantities `sellable`, `reserved`, `damaged` are integers with `0 ≤ reserved ≤ sellable`, `damaged ≥ 0`, all within the PostgreSQL signed integer range. Enforced by database CHECK constraints as well as service logic.
+- Every variant has exactly one inventory item: the migration backfills existing variants with zeros, and a database trigger creates the item for every new variant (catalog API and seed included).
+- `reserved` cannot be edited directly; it only changes through future reservation workflows.
+- Available quantity = `sellable − reserved`. Damaged units are never available.
 
-### ProductVariant
+### InventoryMovement (append-only)
 
-- UUID, parent product ID, SKU, language, edition, `unitPriceMinor`, active flag, creation/update timestamps.
-- SKU: 3–40 uppercase ASCII letters/digits/hyphens, starts and ends with a letter or digit. Trim and normalize to uppercase on creation; database uniqueness and format constraints use this canonical value.
-- SKU and parent product are immutable after creation, including for inactive variants. A SKU is never reused.
-- Initial supported languages: `en` and `sr`. Edition is trimmed text of 1–80 characters. Language and edition remain editable; SKU is the stable business identifier.
-- Effective visibility requires both product and variant to be active. Deactivating a product does not rewrite its variants' individual active flags.
-- Products may exist without variants while being configured; ordinary browsing includes only active products with at least one active variant. Administrators can inspect incomplete and inactive records in management views.
-- Enforce foreign keys, SKU uniqueness/format, nonnegative bounded prices, and product type/reference consistency in the database as well as API validation where applicable. Verify the referenced product's type transactionally; its immutable type and restricted deletion preserve that check afterward.
+- ID, variant, type (`opening_balance`, `receipt`, `adjustment`; later features add reservation/shipment/return types), bucket (`sellable` or `damaged`), nonzero signed `delta`, resulting `sellable`/`reserved`/`damaged` after the movement, optional receipt reference, reason (required for adjustments), actor and organization (null only for seed opening balances), correlation ID (null only for seed), and `occurredAt` from the injected clock.
+- For every variant, `sellable` equals the sum of sellable deltas and `damaged` equals the sum of damaged deltas. Checked in verification.
 
-## API contract to implement
+### Operations
 
-Shared Zod request/response schemas belong in `packages/contracts`; document exact schemas and statuses in OpenAPI before implementing endpoint behavior. Use camelCase DTO fields to match existing contracts.
+- **Receipt:** `quantity` 1–1,000,000, optional `reference` (1–80 chars, e.g. a delivery note) and `note` (1–500). Adds to `sellable`. Resulting quantity above the integer range returns 422 on `quantity`.
+- **Adjustment:** `bucket` (`sellable` | `damaged`), nonzero `delta` between −1,000,000 and 1,000,000, `reason` 3–500 chars. The result must keep every invariant; otherwise 409 `INSUFFICIENT_STOCK` with no changes.
+- Text fields are trimmed; unknown fields are rejected.
+
+## Consistency rules (overview §7)
+
+- **Idempotency-Key** is required on receipts and adjustments (1–255 printable ASCII characters). Scope: organization, actor, operation, and target variant. The canonical payload hash and committed response are persisted.
+  - Missing key → 400 `IDEMPOTENCY_KEY_REQUIRED`.
+  - Same key, same payload, completed → replay the original status and body without new effects.
+  - Same key, different payload → 409 `IDEMPOTENCY_KEY_REUSED`.
+  - Same key while the first request is still running → 409 `REQUEST_IN_PROGRESS`. An in-progress claim has a short lease so a crashed request cannot block the key forever.
+  - A failed or rolled-back operation leaves no completed idempotency record, movement, audit event, or quantity change. Access checks run before any replay.
+- **Transactions:** receipts and adjustments run in short PostgreSQL Serializable transactions: reread the item → validate → update quantities → insert movement and audit → complete the idempotency record → commit. Serialization or write conflicts retry the whole transaction, up to 3 attempts; exhaustion returns 409 `CONCURRENT_MODIFICATION`.
+
+## API contract
 
 | Endpoint | Access | Behavior |
 |---|---|---|
-| `GET /api/catalog/products` | All authenticated roles | Active browse list |
-| `GET /api/catalog/products/:productId` | All authenticated roles | Visible product details with active variants |
-| `GET /api/admin/catalog/products` | Administrator | Management list, including inactive/incomplete records |
-| `GET /api/admin/catalog/products/:productId` | Administrator | Management details with all variants |
-| `POST /api/admin/catalog/products` | Administrator + CSRF | Create product; return 201 |
-| `PATCH /api/admin/catalog/products/:productId` | Administrator + CSRF | Set editable fields/active flag; return 200 |
-| `POST /api/admin/catalog/products/:productId/variants` | Administrator + CSRF | Create variant; return 201 |
-| `PATCH /api/admin/catalog/products/:productId/variants/:variantId` | Administrator + CSRF | Set editable fields/active flag; return 200 |
+| `GET /api/inventory` | Operator, administrator | Paginated stock list |
+| `GET /api/inventory/:variantId` | Operator, administrator | One item with product/variant summary |
+| `GET /api/inventory/:variantId/movements` | Operator, administrator | Paginated movements, newest first |
+| `POST /api/inventory/:variantId/receipts` | Operator, administrator + CSRF + Idempotency-Key | Record receipt; 201 with movement and item |
+| `POST /api/inventory/:variantId/adjustments` | Operator, administrator + CSRF + Idempotency-Key | Record adjustment; 201 with movement and item |
 
-- Lists return `{ items, page, pageSize, total }`; default page 1 and page size 20, supported sizes 20/50/100. Page must be a positive integer; an out-of-range page returns an empty list with the correct total.
-- List filters: `q` (trimmed, at most 120 characters; literal case-insensitive substring over product name/publisher or eligible variant SKU), `type`, and `language`. Administrator lists additionally support `status=all|active|inactive` (default `all`, referring to the product's own flag).
-- Apply filters before pagination, without duplicate products when multiple variants match. Variant-based filters use active variants for ordinary browsing and all variants for administration. A language filter matches products with a qualifying variant; details still return all variants allowed by the endpoint's visibility rules.
-- Fixed sort: product name ascending, then unique product ID ascending. Variant order: SKU ascending, then ID. Keep totals and page results consistent within a request.
-- List responses contain product summary fields and eligible variant summaries with explicit prices/currency. Do not show a single ambiguous product price or automatically select a variant.
-- Missing/hidden product and mismatched product/variant URL ownership return 404 `NOT_FOUND`. Missing session returns 401; forbidden role or invalid CSRF returns 403 using existing codes.
-- Invalid UUIDs, unsupported filters, unknown mutation fields, empty patches, immutable fields, invalid prices, and invalid base-game relationships return 422 `VALIDATION_FAILED` with field details. Duplicate canonical SKU returns 409 `SKU_ALREADY_EXISTS` with no partial changes. Reuse the existing validation error envelope.
-- Catalog endpoints do not require `Idempotency-Key` in this slice. Disable automatic mutation retries. Product creation after an ambiguous network failure requires checking the management list before retrying; it does not promise replay/deduplication. SKU uniqueness prevents duplicate variants. PATCH sets absolute values; a no-op must not create a new audit event.
-- Concurrent edits of the same field use last committed write wins; PATCH updates only explicitly supplied fields. Catalog edit versioning is outside this slice; future draft versioning remains required.
+- Pagination follows the catalog: `page` (positive integer), `pageSize` 20/50/100, response `{ items, page, pageSize, total }`.
+- Stock list filters: `q` (literal case-insensitive substring of SKU or product name, ≤120 chars) and `stock` (`all` | `available` | `unavailable`, where unavailable means available quantity 0). Sort: product name, SKU, variant ID.
+- Movements sort: `occurredAt` descending, then ID descending.
+- Unknown variant → 404 `NOT_FOUND`. Invalid UUIDs, filters, or bodies → 422 `VALIDATION_FAILED` with field details.
+- Catalog responses add `availableQuantity` to every variant (browse and admin).
 
-## Essential audit
+## Audit
 
-- Add only the persistence needed for catalog create/update/activation events: actor/user and organization IDs, entity type/ID, action, timestamp from the injected clock, correlation ID, and explicitly selected before/after business fields.
-- Commit a catalog mutation and its audit event in the same transaction. Rejected or rolled-back operations leave neither a change nor a success audit event. Audit insertion failure rolls back the mutation.
-- Treat audit rows as append-only in application behavior. Do not include credentials, cookies, tokens, or unrelated request data. System-wide search, audit screens, and notification delivery remain later features.
-- Seed operations are deterministic setup, not administrator actions; do not invent a user actor or duplicate audit records when reseeding.
+- One audit event per receipt/adjustment, in the same transaction as the movement: entity `inventory_item` (variant ID), action `received` or `adjusted`, before/after quantities, and the movement ID. Seed opening balances are setup, not audited.
 
 ## UI acceptance criteria
 
-- Retailers land on `/catalog` after login. Operators retain the existing home until the orders screen exists, with catalog navigation. Administrators land on `/admin/catalog` and can also browse the ordinary catalog.
-- Catalog provides product cards, search, type/language filters, and server pagination. Filter changes reset to page 1; loading, empty, and error states are explicit.
-- Product details show description, publisher, base/expansion relationship, and an unselected variant control. Selecting a variant reveals its precise SKU, language, edition, and formatted EUR price.
-- Administrator list exposes active status and navigation to create/edit product and variant forms. Deactivation is reversible; no delete action.
-- Preserve entered data on validation/network failures; associate errors with fields and show a clear success outcome. Disable duplicate submissions while a request is pending and invalidate affected browse/admin queries after successful mutations.
-- Follow existing CSS Modules, design tokens, API client, session protection, and TanStack Query patterns. Use the warm palette, semantic HTML, visible focus, and keyboard-accessible controls. Catalog and details must work on narrow screens.
-- Document selector coverage during implementation: approximately 80% of automation-relevant targets use stable `data-test` attributes; list intentional semantic-locator exceptions. Scope repeated product targets by product ID and variants by SKU.
-- Use original locally stored artwork or simple original placeholders. No real game branding or required external image service.
+- Staff navigation gets **Inventory** (`/inventory`) for operators and administrators. Operators still land on the existing home until the orders screen exists.
+- `/inventory`: table with SKU, product, language/edition, sellable, reserved, damaged, available, and catalog status; search, stock filter, and server pagination; explicit loading, empty, and error states. Rows are scoped by SKU.
+- `/inventory/:variantId`: current quantities, a receipt form, an adjustment form, and the movement history with pagination. Forms preserve input on errors, link errors to fields, disable double submission, and show a clear success message. After success, affected inventory and catalog queries are invalidated.
+- A form keeps one idempotency key for a submission and its retries, and generates a new key after success or after the input changes.
+- Catalog product details show `Available: N` for the selected variant with the not-a-guarantee note.
+- Selectors: `data-test` attributes for all functional targets, following the existing contract. Repeated rows are scoped by `data-sku`.
 
-## Deterministic seed catalog
+## Deterministic seed
 
-The following names and publishers are fictional working fixtures, not references to real commercial products.
+Opening balances (sellable / damaged); reserved is 0 everywhere. Covers normal, low, zero, damaged, and inactive cases.
 
-| Product | Type / parent | Publisher | Variants: SKU / language / edition / price minor units |
+| SKU | Sellable | Damaged | Case |
 |---|---|---|---|
-| Lanterns of Velora | Base game | Copper Finch Games | `LOV-EN-STD` / en / Standard / 4200; `LOV-SR-STD` / sr / Standard / 4200 |
-| Lanterns of Velora: Mistbound Docks | Expansion / Lanterns of Velora | Copper Finch Games | `LOV-MD-EN` / en / Standard / 1800 |
-| Clockwork Orchard | Base game | Amber Meeple Studio | `CWO-EN-STD` / en / Standard / 3500; `CWO-EN-DLX` / en / Deluxe / 5500 |
-| The Saltwind Atlas | Base game | Paper Badger Works | `SWA-EN-STD` / en / Standard / 4800 |
-| The Saltwind Atlas: Glass Isles | Expansion / The Saltwind Atlas | Paper Badger Works | `SWA-GI-EN` / en / Standard / 2200 |
-| Mossbridge Market | Base game | Copper Finch Games | `MBM-SR-STD` / sr / Standard / 2900; `MBM-EN-STD` / en / Standard / 2900 (inactive variant) |
-| Tinker's Comet | Base game | Amber Meeple Studio | `TKC-EN-STD` / en / Standard / 0 (zero-price boundary fixture) |
-| Echoes of Brindlewood | Base game (inactive) | Paper Badger Works | `EBW-EN-STD` / en / Standard / 3900 (individually active; hidden by parent) |
+| `LOV-EN-STD` | 40 | 0 | normal |
+| `LOV-SR-STD` | 12 | 0 | normal |
+| `LOV-MD-EN` | 3 | 0 | low |
+| `CWO-EN-STD` | 25 | 0 | normal |
+| `CWO-EN-DLX` | 0 | 0 | zero |
+| `SWA-EN-STD` | 18 | 2 | damaged units present |
+| `SWA-GI-EN` | 1 | 0 | boundary: one unit |
+| `MBM-SR-STD` | 9 | 0 | normal |
+| `MBM-EN-STD` | 5 | 0 | inactive variant |
+| `TKC-EN-STD` | 60 | 0 | normal |
+| `EBW-EN-STD` | 7 | 0 | inactive product |
 
-- Eight products and eleven variants with stable fixture identifiers; rerunning seed produces the same catalog without duplicate products, variants, or audit events.
-- Keep seed prices and the product/variant active flags deterministic. Do not seed inventory before the inventory feature.
-- Use isolated extra fixtures with at least 21 eligible products for pagination checks; do not inflate the default demo solely for that test.
+- Seed writes an opening balance only for variants that have no movements yet, so rerunning it never rewrites stock that later receipts or adjustments changed and never duplicates movements.
 
-## Verification and completion
+## Verification
 
-- Check every endpoint's unauthenticated/forbidden/authorized behavior, including direct administrator API calls by an operator and retailer, and missing/invalid CSRF.
-- Check visibility through both lists and direct detail URLs, inactive variants, inactive parents, products without variants, and expansion references to inactive base games.
-- Check normalized duplicate SKU, including simultaneous creation attempts; price zero/negative/fractional/overflow boundaries; invalid expansion references; immutable fields; unknown fields; and mismatched nested IDs.
-- Check search/filter combinations, deterministic page boundaries and totals, no duplicate products, and page sizes 20/50/100.
-- Verify persisted data and audit atomicity on real PostgreSQL, including rollback on audit failure. Verify existing identity records remain intact after migration and seed reruns.
-- Browser checks cover browse/detail/variant selection, administrator create/edit/deactivate/reactivate flows, error input preservation, keyboard access, narrow layouts, and login/logout regression.
-- Run `pnpm typecheck`, `pnpm lint`, and `pnpm build`. Record actual results and any gaps; do not mark the feature complete based on the specification alone.
-- Establish reproducible API/DB/browser checks with implementation. A broad unit-test framework and companion portfolio automation setup are not prerequisites for this specification; test/CI ownership remains a separate decision.
-- No database reset is needed for this feature plan. Use an additive migration and an isolated database for destructive verification.
-- Review changes before commit; committing still requires user permission. Do not merge or delete the branch as part of specification preparation.
-
-## Implementation order
-
-1. Add shared catalog schemas and OpenAPI definitions, configuration, Prisma models, reviewed additive migration, and deterministic seed.
-2. Implement authenticated reads and administrator mutations with database constraints and transactional audit.
-3. Implement catalog/detail and administrator screens, navigation, cache invalidation, and selectors.
-4. Run the verification above, document evidence, and update status/history when implementation is actually complete.
+- Access: every endpoint unauthenticated (401), retailer (403), operator and administrator allowed; missing/invalid CSRF (403).
+- Receipts and adjustments: quantities, movements, audit, and sum-of-movements invariant on real PostgreSQL; bounds (0, negative, fractional, overflow); adjustments that would go below zero or below reserved return 409 with no side effects.
+- Idempotency: missing key, replay, reused key with a different payload, in-progress conflict, and no record after a failed request.
+- Concurrency: parallel adjustments that together would go negative produce exactly one success; parallel identical requests with one key produce one effect.
+- Rollback: an injected audit failure leaves no movement, quantity change, or completed idempotency record.
+- Catalog shows `availableQuantity`; seed rerun keeps stock and movement counts unchanged.
+- Browser: stock list, filters, receipt, adjustment, error preservation, retailer availability display, keyboard access, narrow layout, and login/logout regression.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build` pass. Record actual results and gaps.
 
 ## Implementation results (2026-09-30)
 
-- Catalog models, additive migration and DB invariants, Zod/OpenAPI contracts, authenticated browse API, administrator mutations, and atomic audit are implemented.
-- Seed contains 8 products and 11 variants. `CATALOG_CURRENCY=EUR` is required; `.env.example` and local `.env` are updated.
-- Catalog/detail screens, variant selection, filters/pagination, administrator forms, role landing routes, cache invalidation, and selector contracts are implemented.
-- Real PostgreSQL integration checks: 11 groups passed on a separate QA database. Chrome browser checks: 7 groups passed, including keyboard access and responsive layouts; screenshots inspected.
-- Full reproduction instructions, covered cases, design decisions, selector exceptions, and limitations: [features/catalog-verification.md](features/catalog-verification.md).
-- Final gates passed: `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check`. Build reports a non-failing JavaScript chunk-size warning.
-- Changes are prepared on `feature/catalog`; merge remains pending. Inventory and order workflows remain the next business slices.
-- Independent pre-merge check (Claude Code, 2026-09-30):
-  - `pnpm install`, `typecheck`, `lint`, and `build` pass on `feature/catalog`; the build still shows the non-failing chunk-size warning.
-  - Schema drift check: `prisma migrate dev --create-only` produced an empty migration.
-  - Additive migration and seed on the dev database: 8 products, 11 variants.
-  - Headless Chrome smoke test on 5173/3000:
-    - a retailer lands on `/catalog` with 7 products and gets no admin rows at `/admin/catalog`;
-    - an admin lands on `/admin/catalog` with 8 products;
-    - an operator lands on home;
-    - sign-out works for all three.
-  - Full QA harnesses were not re-run; the results above are from the implementing session.
-  - Review note: `audit_events.actor_id` and `organization_id` have no foreign keys. This is acceptable while users are never deleted; decide before building audit search.
-  - Fast-forward merged to `main`; `feature/catalog` deleted locally and on `origin`.
+- Implemented as specified. Full evidence, reproduction steps, selectors, and limitations: [features/inventory-verification.md](features/inventory-verification.md).
+- API/PostgreSQL: 18 check groups passed on three fresh QA databases. Catalog regression: 11 of 11. Browser: 9 groups passed on two fresh QA stacks, including a lost-response retry that applied only once.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check` pass.
+- Additions beyond the written spec:
+  - The operator home page links to Inventory; without it, operators had no route there.
+  - The pagination schemas are shared through a new `pagination.ts` contract module.
+  - The catalog's audit writes go through the shared `recordAudit` helper.
+- The migration was renamed to `20260930130000_inventory` so it runs after the catalog migration on fresh databases.
 
 ## Previous feature
 
-Authentication and sessions is completed and merged as `023f156`. Its full scope, verification notes, and accepted limitations are preserved in [features/auth-sessions.md](features/auth-sessions.md). Public-demo login rate limiting, session cleanup, and automated test/CI setup remain outstanding; they are not silently included in catalog scope.
+Catalog is completed and merged as `25153bd`. Its specification, verification record, and review notes are preserved in [features/catalog.md](features/catalog.md) and [features/catalog-verification.md](features/catalog-verification.md). Authentication details are in [features/auth-sessions.md](features/auth-sessions.md). Public-demo login rate limiting, session cleanup, test/CI setup, and audit foreign keys remain outstanding and are not silently included here.
 
 ## History
 

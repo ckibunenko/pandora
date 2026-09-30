@@ -38,6 +38,7 @@ interface RequestOptions<T> {
   body?: unknown;
   parse: (body: unknown) => T;
   acceptedErrorStatuses?: readonly number[];
+  headers?: Readonly<Record<string, string>>;
 }
 
 async function toApiError(response: Response): Promise<ApiError> {
@@ -50,8 +51,11 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, "UNEXPECTED_RESPONSE", `Request failed with status ${response.status}.`, undefined);
 }
 
-export async function request<T>(path: string, { method = "GET", body, parse, acceptedErrorStatuses = [] }: RequestOptions<T>): Promise<T> {
-  const headers: Record<string, string> = { Accept: "application/json" };
+export async function request<T>(
+  path: string,
+  { method = "GET", body, parse, acceptedErrorStatuses = [], headers: extraHeaders = {} }: RequestOptions<T>,
+): Promise<T> {
+  const headers: Record<string, string> = { ...extraHeaders, Accept: "application/json" };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";
   }

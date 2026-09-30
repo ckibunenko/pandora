@@ -73,7 +73,16 @@ function ProductDetails({ product }: { product: CatalogProduct }) {
                 <dt>Edition</dt>
                 <dd>{variant.edition}</dd>
               </div>
+              <div>
+                <dt>Available</dt>
+                <dd data-test="variant-available">
+                  {variant.availableQuantity}
+                </dd>
+              </div>
             </dl>
+            <p className={styles.muted} data-test="availability-note">
+              Availability is not reserved until your order is confirmed.
+            </p>
           </div>
         ) : (
           <p className={styles.muted}>

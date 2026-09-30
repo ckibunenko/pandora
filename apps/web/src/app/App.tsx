@@ -13,6 +13,8 @@ import {
 import { CatalogPage } from "../features/catalog/CatalogPage";
 import { ProductPage } from "../features/catalog/ProductPage";
 import { AdminProductPage } from "../features/catalog/AdminProductPage";
+import { InventoryItemPage, RequireStaff } from "../features/inventory/InventoryItemPage";
+import { InventoryPage } from "../features/inventory/InventoryPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +48,13 @@ const router = createBrowserRouter([
                     path: "/admin/catalog/:productId",
                     element: <AdminProductPage />,
                   },
+                ],
+              },
+              {
+                element: <RequireStaff />,
+                children: [
+                  { path: "/inventory", element: <InventoryPage /> },
+                  { path: "/inventory/:variantId", element: <InventoryItemPage /> },
                 ],
               },
             ],

@@ -5,6 +5,7 @@ import { PrismaClient, type OrganizationType, type UserRole } from "../generated
 import { PasswordHasher } from "../modules/auth/password-hasher.js";
 
 import { seedCatalog } from "./catalog-seed.js";
+import { seedInventory } from "./inventory-seed.js";
 
 const seedEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test"], { error: "seeding only runs when NODE_ENV is development or test" }),
@@ -56,7 +57,7 @@ async function seed(): Promise<void> {
   const passwordHash = await new PasswordHasher().hash(env.SEED_USER_PASSWORD);
 
   try {
-    await prisma.$transaction(async (tx) => {
+    const openingMovements = await prisma.$transaction(async (tx) => {
       await seedCatalog(tx);
       for (const { id, ...organization } of ORGANIZATIONS) {
         await tx.organization.upsert({ where: { id }, create: { id, ...organization }, update: organization });
@@ -65,8 +66,12 @@ async function seed(): Promise<void> {
         const data = { ...user, passwordHash };
         await tx.user.upsert({ where: { id }, create: { id, ...data }, update: data });
       }
+      return seedInventory(tx);
     });
-    console.log(`Seeded ${ORGANIZATIONS.length} organizations and ${USERS.length} users; 8 catalog products and 11 variants.`);
+    console.log(
+      `Seeded ${ORGANIZATIONS.length} organizations and ${USERS.length} users; 8 catalog products and 11 variants; ` +
+        `${openingMovements} new opening-balance movements.`,
+    );
   } finally {
     await prisma.$disconnect();
   }

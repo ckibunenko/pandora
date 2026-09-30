@@ -30,6 +30,7 @@ export function HomePage() {
     <main className={styles.page}>
       <h1>Pandora</h1>
       <Link to="/catalog" data-test="catalog-nav">Browse catalog</Link>
+      <Link to="/inventory" data-test="inventory-nav">Manage inventory</Link>
       <section className={styles.account} aria-label="Signed-in account">
         <p data-test="current-user">
           Signed in as <strong>{user.displayName}</strong> ({user.email})

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSchema, pageSizeSchema, paginatedResponseSchema } from "./pagination.js";
 
 export const productTypeSchema = z.enum(["base_game", "expansion"]);
 export const catalogLanguageSchema = z.enum(["en", "sr"]);
@@ -65,19 +66,6 @@ export const variantParamsSchema = productParamsSchema.extend({
   variantId: z.uuid(),
 });
 
-// Query strings are parsed strictly before coercion: no exponent, decimal, or empty numeric values.
-const pageSchema = z
-  .string()
-  .regex(/^[1-9][0-9]*$/)
-  .default("1")
-  .transform(Number)
-  .pipe(z.number().int().max(2_147_483_647));
-const pageSizeSchema = z
-  .enum(["20", "50", "100"])
-  .default("20")
-  .transform((value): 20 | 50 | 100 =>
-    value === "20" ? 20 : value === "50" ? 50 : 100,
-  );
 export const catalogQuerySchema = z.strictObject({
   page: pageSchema,
   pageSize: pageSizeSchema,
@@ -97,6 +85,8 @@ export const variantSchema = z.object({
   unitPriceMinor: priceSchema,
   currency: catalogCurrencySchema,
   isActive: z.boolean(),
+  /** Sellable minus reserved; not a guarantee until an order is confirmed. */
+  availableQuantity: z.number().int().nonnegative(),
 });
 export const productSchema = z.object({
   id: z.uuid(),
@@ -110,12 +100,7 @@ export const productSchema = z.object({
   isActive: z.boolean(),
   variants: z.array(variantSchema),
 });
-export const catalogResponseSchema = z.object({
-  items: z.array(productSchema),
-  page: z.number().int().positive(),
-  pageSize: z.union([z.literal(20), z.literal(50), z.literal(100)]),
-  total: z.number().int().nonnegative(),
-});
+export const catalogResponseSchema = paginatedResponseSchema(productSchema);
 export type CatalogProduct = z.infer<typeof productSchema>;
 export type CatalogVariant = z.infer<typeof variantSchema>;
 export type CatalogResponse = z.infer<typeof catalogResponseSchema>;

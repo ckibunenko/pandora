@@ -19,30 +19,32 @@ enum UserRole {
 }
 
 model Organization {
-  id        String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name      String
-  type      OrganizationType
-  isActive  Boolean          @default(true) @map("is_active")
-  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
-  users     User[]
+  id                 String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name               String
+  type               OrganizationType
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  users              User[]
+  inventoryMovements InventoryMovement[]
 
   @@map("organizations")
 }
 
 model User {
-  id             String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  organizationId String       @map("organization_id") @db.Uuid
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                 String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  organizationId     String              @map("organization_id") @db.Uuid
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Stored lowercase; the unique index relies on that normalization.
-  email          String       @unique
-  displayName    String       @map("display_name")
-  passwordHash   String       @map("password_hash")
-  role           UserRole
-  isActive       Boolean      @default(true) @map("is_active")
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  sessions       Session[]
+  email              String              @unique
+  displayName        String              @map("display_name")
+  passwordHash       String              @map("password_hash")
+  role               UserRole
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions           Session[]
+  inventoryMovements InventoryMovement[]
 
   @@index([organizationId])
   @@map("users")
@@ -64,7 +66,6 @@ model Session {
   @@index([userId])
   @@map("sessions")
 }
-
 
 enum ProductType {
   BASE_GAME
@@ -91,16 +92,18 @@ model Product {
 }
 
 model ProductVariant {
-  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  productId      String   @map("product_id") @db.Uuid
-  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  sku            String   @unique @db.VarChar(40)
-  language       String   @db.VarChar(2)
-  edition        String   @db.VarChar(80)
-  unitPriceMinor Int      @map("unit_price_minor")
-  isActive       Boolean  @default(true) @map("is_active")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  productId      String         @map("product_id") @db.Uuid
+  product        Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sku            String         @unique @db.VarChar(40)
+  language       String         @db.VarChar(2)
+  edition        String         @db.VarChar(80)
+  unitPriceMinor Int            @map("unit_price_minor")
+  isActive       Boolean        @default(true) @map("is_active")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  /// Created by a database trigger for every variant.
+  inventory      InventoryItem?
 
   @@index([productId, sku])
   @@map("product_variants")
@@ -120,4 +123,79 @@ model AuditEvent {
 
   @@index([entityType, entityId, occurredAt])
   @@map("audit_events")
+}
+
+enum MovementType {
+  OPENING_BALANCE
+  RECEIPT
+  ADJUSTMENT
+}
+
+enum StockBucket {
+  SELLABLE
+  DAMAGED
+}
+
+model InventoryItem {
+  variantId String              @id @map("variant_id") @db.Uuid
+  variant   ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  sellable  Int                 @default(0)
+  /// Changed only by reservation workflows; never edited directly.
+  reserved  Int                 @default(0)
+  damaged   Int                 @default(0)
+  updatedAt DateTime            @default(now()) @map("updated_at") @db.Timestamptz(3)
+  movements InventoryMovement[]
+
+  @@map("inventory_items")
+}
+
+/// Append-only: a database trigger rejects updates and deletes.
+model InventoryMovement {
+  id             String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  variantId      String        @map("variant_id") @db.Uuid
+  item           InventoryItem @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  type           MovementType
+  bucket         StockBucket
+  delta          Int
+  sellableAfter  Int           @map("sellable_after")
+  reservedAfter  Int           @map("reserved_after")
+  damagedAfter   Int           @map("damaged_after")
+  reference      String?       @db.VarChar(80)
+  note           String?       @db.VarChar(500)
+  reason         String?       @db.VarChar(500)
+  /// Null only for seed opening balances.
+  actorId        String?       @map("actor_id") @db.Uuid
+  actor          User?         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  organizationId String?       @map("organization_id") @db.Uuid
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  correlationId  String?       @map("correlation_id") @db.VarChar(64)
+  occurredAt     DateTime      @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([variantId, occurredAt(sort: Desc), id(sort: Desc)])
+  @@map("inventory_movements")
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+model IdempotencyRecord {
+  id             String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  actorId        String            @map("actor_id") @db.Uuid
+  operation      String            @db.VarChar(64)
+  target         String            @db.VarChar(64)
+  key            String            @map("idempotency_key") @db.VarChar(255)
+  requestHash    String            @map("request_hash") @db.Char(64)
+  status         IdempotencyStatus
+  /// While IN_PROGRESS: after this time another request may take over a crashed claim.
+  leaseExpiresAt DateTime          @map("lease_expires_at") @db.Timestamptz(3)
+  responseStatus Int?              @map("response_status")
+  responseBody   Json?             @map("response_body")
+  createdAt      DateTime          @map("created_at") @db.Timestamptz(3)
+  completedAt    DateTime?         @map("completed_at") @db.Timestamptz(3)
+
+  @@unique([organizationId, actorId, operation, target, key])
+  @@map("idempotency_records")
 }

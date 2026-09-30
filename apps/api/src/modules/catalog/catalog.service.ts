@@ -13,12 +13,11 @@ import {
 } from "@pandora/contracts";
 import { Clock } from "../../common/clock/clock.js";
 import { APP_CONFIG, type AppConfig } from "../../common/config/app-config.js";
+import { recordAudit } from "../../common/audit/audit.js";
 import { ApiException } from "../../common/errors/api-exception.js";
-import { currentCorrelationId } from "../../common/request-context/request-context.js";
 import {
   Prisma,
   type Product,
-  type ProductVariant,
 } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../infrastructure/prisma/prisma.service.js";
 import type { AuthContext } from "../auth/auth-context.js";
@@ -31,6 +30,7 @@ const VARIANT_SELECT = {
   edition: true,
   unitPriceMinor: true,
   isActive: true,
+  inventory: { select: { sellable: true, reserved: true } },
 } satisfies Prisma.ProductVariantSelect;
 const PRODUCT_SELECT = {
   id: true,
@@ -62,7 +62,9 @@ function productSelection(admin: boolean) {
 type ProductRecord = Prisma.ProductGetPayload<{
   select: ReturnType<typeof productSelection>;
 }>;
-type VariantRecord = Pick<ProductVariant, keyof typeof VARIANT_SELECT>;
+type VariantRecord = Prisma.ProductVariantGetPayload<{
+  select: typeof VARIANT_SELECT;
+}>;
 const notFound = () =>
   new ApiException(
     HttpStatus.NOT_FOUND,
@@ -100,10 +102,14 @@ export class CatalogService {
   ) {}
 
   private variantDto(variant: VariantRecord): CatalogVariant {
+    // A database trigger creates the inventory item together with every variant.
+    if (!variant.inventory)
+      throw new Error(`Variant ${variant.id} has no inventory item.`);
     return {
       ...variantSnapshot(variant),
       language: catalogLanguageSchema.parse(variant.language),
       currency: this.config.catalogCurrency,
+      availableQuantity: variant.inventory.sellable - variant.inventory.reserved,
     };
   }
 
@@ -229,21 +235,12 @@ export class CatalogService {
     before: Prisma.InputJsonObject | null,
     after: Prisma.InputJsonObject,
   ): Promise<void> {
-    const correlationId = currentCorrelationId();
-    if (!correlationId)
-      throw new Error("Catalog writes require request context.");
-    await tx.auditEvent.create({
-      data: {
-        actorId: auth.user.id,
-        organizationId: auth.user.organization.id,
-        entityType,
-        entityId,
-        action,
-        occurredAt: this.clock.now(),
-        correlationId,
-        before: before ?? Prisma.DbNull,
-        after,
-      },
+    await recordAudit(tx, this.clock, auth, {
+      entityType,
+      entityId,
+      action,
+      before,
+      after,
     });
   }
 
