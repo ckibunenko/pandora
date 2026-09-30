@@ -12,6 +12,7 @@ apps/api/src/generated/
 # env files; only the example is committed
 .env*
 !.env.example
+!.env.demo.example
 
 # misc
 .DS_Store

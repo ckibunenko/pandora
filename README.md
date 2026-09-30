@@ -21,6 +21,8 @@ Built so far:
 
 Returns, notifications, and the Bug Lab have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
+An isolated local demo can be built and restored with `pnpm demo:build` and `pnpm demo:reset` after creating `.env.demo` from `.env.demo.example`. Reset discards demo changes, signs everyone out, and restores the fixtures behind a maintenance page. Its database is separate from development. Setup, recovery, and verification: [demo reset runbook](context/features/demo-reset-verification.md).
+
 ## Stack
 
 | Layer | Technology |

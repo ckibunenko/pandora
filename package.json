@@ -10,7 +10,9 @@
     "dev": "pnpm --filter @pandora/contracts build && pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @pandora/contracts build && pnpm -r typecheck",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "demo:build": "docker compose --env-file .env.demo -f compose.demo.yml build api web",
+    "demo:reset": "node --env-file=.env.demo scripts/demo-reset.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

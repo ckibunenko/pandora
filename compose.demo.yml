@@ -1,0 +1,65 @@
+name: pandora-demo
+
+x-api: &api
+  image: pandora-demo-api:local
+  build:
+    context: .
+    dockerfile: deploy/demo/Dockerfile
+    target: api
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://pandora_demo:${DEMO_DB_PASSWORD:?set in .env.demo}@postgres:5432/pandora_demo?schema=public
+    API_PORT: 3000
+    CATALOG_CURRENCY: EUR
+    SESSION_COOKIE_SECURE: "false"
+    SEED_USER_PASSWORD: ${DEMO_USER_PASSWORD:?set in .env.demo}
+  init: true
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: pandora_demo
+      POSTGRES_PASSWORD: ${DEMO_DB_PASSWORD:?set in .env.demo}
+      POSTGRES_DB: pandora_demo
+    volumes:
+      - demo-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pandora_demo -d pandora_demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    <<: *api
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  reset:
+    <<: *api
+    profiles: [tools]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://pandora_demo:${DEMO_DB_PASSWORD:?set in .env.demo}@postgres:5432/pandora_demo?schema=public
+      SEED_USER_PASSWORD: ${DEMO_USER_PASSWORD:?set in .env.demo}
+      DEMO_RESET_ALLOWED: "true"
+    command: ["node", "dist/seed/demo-reset.js"]
+
+  web:
+    image: pandora-demo-web:local
+    build:
+      context: .
+      dockerfile: deploy/demo/Dockerfile
+      target: web
+    ports:
+      - "127.0.0.1:${DEMO_PORT:-5180}:8080"
+    volumes:
+      - demo-maintenance:/maintenance
+
+volumes:
+  demo-data:
+  demo-maintenance:

@@ -17,7 +17,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/api/**/*.ts", "apps/api/checks/**/*.mjs", "apps/web/checks/**/*.mjs", "packages/**/*.ts", "**/*.config.{ts,mjs}"],
+    files: ["apps/api/**/*.ts", "apps/api/checks/**/*.mjs", "apps/web/checks/**/*.mjs", "scripts/**/*.mjs", "packages/**/*.ts", "**/*.config.{ts,mjs}"],
     languageOptions: { globals: globals.node },
   },
   {

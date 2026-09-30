@@ -50,6 +50,14 @@ Focused feature checks exist, each against its own empty QA database (never the 
 
 There is no general unit-test framework or CI test pipeline yet.
 
+## Isolated demo
+
+- `compose.demo.yml` and `.env.demo.example` define a separate local demo; only the web port (5180 by default) is published on loopback. Development still uses `docker-compose.yml` and `.env`.
+- `pnpm demo:build` builds API/web images; `pnpm demo:reset` is destructive **only to the dedicated demo**. It persists maintenance, stops the API, deploys migrations, atomically restores fixtures/session/idempotency state, waits for readiness, then reopens. Failure stays in maintenance.
+- Shared fixtures live in `apps/api/src/seed/seed-data.ts`; normal `db:seed` remains development/test-only. `restore-demo-data.ts` is an operator-only transaction, not an API operation.
+- Verification: `DEMO_CHECK_DATABASE=pandora_demo_check_<unique> pnpm --filter @pandora/api check:demo-reset` on an empty QA database; `apps/web/checks/demo-reset-browser.mjs` on a disposable `pandora-demo-qa-*` Compose project. See [runbook and evidence](context/features/demo-reset-verification.md).
+- No scheduler/public deployment is installed. Future workers must join the reset stop/start lifecycle; new tables need explicit reset review.
+
 ## Demo accounts
 
 All seeded accounts use the password from `SEED_USER_PASSWORD` in `.env`.
