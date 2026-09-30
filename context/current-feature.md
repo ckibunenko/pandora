@@ -4,7 +4,7 @@ Catalog — fictional board games and expansions, sellable language/edition vari
 
 ## Status
 
-Implemented and verified — commit/push authorized by the user; merge pending.
+Completed — merged to `main` as `25153bd` (2026-09-30).
 
 ## Goal
 
@@ -132,6 +132,18 @@ The following names and publishers are fictional working fixtures, not reference
 - Full reproduction instructions, covered cases, design decisions, selector exceptions, and limitations: [features/catalog-verification.md](features/catalog-verification.md).
 - Final gates passed: `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check`. Build reports a non-failing JavaScript chunk-size warning.
 - Changes are prepared on `feature/catalog`; merge remains pending. Inventory and order workflows remain the next business slices.
+- Independent pre-merge check (Claude Code, 2026-09-30):
+  - `pnpm install`, `typecheck`, `lint`, and `build` pass on `feature/catalog`; the build still shows the non-failing chunk-size warning.
+  - Schema drift check: `prisma migrate dev --create-only` produced an empty migration.
+  - Additive migration and seed on the dev database: 8 products, 11 variants.
+  - Headless Chrome smoke test on 5173/3000:
+    - a retailer lands on `/catalog` with 7 products and gets no admin rows at `/admin/catalog`;
+    - an admin lands on `/admin/catalog` with 8 products;
+    - an operator lands on home;
+    - sign-out works for all three.
+  - Full QA harnesses were not re-run; the results above are from the implementing session.
+  - Review note: `audit_events.actor_id` and `organization_id` have no foreign keys. This is acceptable while users are never deleted; decide before building audit search.
+  - Fast-forward merged to `main`; `feature/catalog` deleted locally and on `origin`.
 
 ## Previous feature
 
@@ -144,5 +156,4 @@ Authentication and sessions is completed and merged as `023f156`. Its full scope
 - Initial Next.js setup: bootstrapped project with `create-next-app` (Next.js 16, React 19, TypeScript, Tailwind CSS v4), stripped the boilerplate from `page.tsx` down to a single `<h1>Pandora</h1>`, cleared `globals.css` to just the Tailwind import, removed the default `public/*.svg` assets, and added the `context/` docs referenced from `AGENTS.md`. Committed as "initial setup" and pushed to `origin/main`.
 - Architecture setup (2026-09-29): replaced the Next.js starter with a pnpm monorepo skeleton (`apps/web` React/Vite, `apps/api` NestJS, `packages/contracts`, `prisma/`, Docker Compose Postgres) connected through `/api/health` and `/api/health/ready`; rewrote `README.md` and updated `AGENTS.md` and `project-overview.md`. Merged to `main` as `fd36011`. Readiness against a running Postgres is still unverified because Docker was not installed.
 - Authentication and sessions (2026-09-30): organizations, users, and Postgres-backed sessions (login, session, logout; 30 min idle / 8 h absolute; role and CSRF guards), API foundations (error envelope, correlation IDs, Zod validation, OpenAPI, JSON logs), deterministic seed with demo accounts, and a login page. OrbStack now provides local Postgres, which also confirmed `/api/health/ready` returns 200. Merged to `main` as `023f156`. Not yet verified: `db:reset` followed by `db:seed`.
-
-- Catalog (2026-09-30, implemented on `feature/catalog`; merge pending): products/variants, EUR prices, browse/admin API and UI, seed, and transactional audit; 11 PostgreSQL/API and 7 browser check groups passed. See the verification record above.
+- Catalog (2026-09-30): products/variants, EUR prices, browse/admin API and UI, seed, and transactional audit; 11 PostgreSQL/API and 7 browser check groups passed (see [features/catalog-verification.md](features/catalog-verification.md)). Independently rechecked before merge, then merged to `main` as `25153bd`.
