@@ -73,6 +73,9 @@ export function OrdersPage() {
             <option value="submitted">Submitted</option>
             <option value="confirmed">Confirmed</option>
             <option value="rejected">Rejected</option>
+            <option value="partially_shipped">Partially shipped</option>
+            <option value="shipped">Shipped</option>
+            <option value="closed_partial">Closed (partly cancelled)</option>
             <option value="cancelled">Cancelled</option>
           </select>
         </label>

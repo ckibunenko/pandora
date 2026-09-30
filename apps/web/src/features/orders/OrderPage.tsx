@@ -1,5 +1,5 @@
 import { ERROR_CODES, MAX_LINE_QUANTITY, type Order } from "@pandora/contracts";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApiError } from "../../lib/api-client";
@@ -8,7 +8,6 @@ import { formatPrice, languageLabel } from "../catalog/catalog-api";
 import catalogStyles from "../catalog/Catalog.module.css";
 import { parseWholeNumber } from "../inventory/inventory-api";
 import {
-  ORDERS_QUERY_KEY,
   STATUS_LABELS,
   cancelOrder,
   confirmOrder,
@@ -18,6 +17,8 @@ import {
   submitOrder,
   useOrder,
 } from "./orders-api";
+import { FulfillmentView } from "./OrderFulfillment";
+import { formatDate, mutationMessage, useOrderCacheUpdate } from "./order-helpers";
 import styles from "./Orders.module.css";
 
 interface LocalLine {
@@ -28,40 +29,6 @@ interface LocalLine {
 const toLocal = (order: Order): LocalLine[] => order.lines.map((line) => ({ variantId: line.variantId, quantity: String(line.quantity) }));
 const sameLines = (a: readonly LocalLine[], b: readonly LocalLine[]) =>
   a.length === b.length && a.every((line, index) => line.variantId === b[index]?.variantId && line.quantity === b[index]?.quantity);
-const formatDate = (iso: string) => new Date(iso).toLocaleString("en-GB", { timeZone: "Europe/Belgrade" });
-const skusFrom = (error: ApiError) => error.details.map((detail) => detail.field.replace(/^lines\./, "")).join(", ");
-
-function mutationMessage(error: unknown, lostResponse: string): string {
-  if (!(error instanceof ApiError)) return lostResponse;
-  switch (error.code) {
-    case ERROR_CODES.versionConflict:
-      return "Someone else changed this draft. Your edits are still shown; reload to see the latest version.";
-    case ERROR_CODES.priceChanged:
-      return `Prices changed for ${skusFrom(error)}. The latest prices are shown now; review them and submit again.`;
-    case ERROR_CODES.variantUnavailable:
-      return `No longer available: ${skusFrom(error)}. Remove these items to submit.`;
-    case ERROR_CODES.insufficientStock:
-      return `Not enough stock to confirm: ${error.details.map((detail) => `${detail.field.replace(/^lines\./, "")} (${detail.message.replace(/\.$/, "")})`).join("; ")}. Nothing was reserved.`;
-    case ERROR_CODES.validationFailed:
-      return "Please correct the highlighted fields.";
-    default:
-      return error.message;
-  }
-}
-
-function useOrderCacheUpdate() {
-  const client = useQueryClient();
-  const session = useSession();
-  return async (order: Order) => {
-    client.setQueryData([...ORDERS_QUERY_KEY, session.data?.user.id, "order", order.id], order);
-    await Promise.all([
-      client.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, session.data?.user.id, "list"] }),
-      client.invalidateQueries({ queryKey: ["catalog"] }),
-      client.invalidateQueries({ queryKey: ["inventory"] }),
-    ]);
-  };
-}
-
 function CancelPanel({ order, version }: { order: Order; version: number }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -652,6 +619,8 @@ export function OrderPage() {
             <DraftEditor key={order.data.id} latest={order.data} />
           ) : order.data.status === "submitted" && !isRetailer ? (
             <StaffReview key={`${order.data.id}-${order.data.version}`} order={order.data} />
+          ) : order.data.confirmedAt !== null ? (
+            <FulfillmentView order={order.data} isStaff={!isRetailer} />
           ) : (
             <FrozenOrder order={order.data} canCancel={isRetailer && order.data.status === "submitted"} />
           )}

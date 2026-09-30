@@ -1,11 +1,15 @@
 import {
   orderListResponseSchema,
   orderSchema,
+  type ApproveCancellation,
   type CancelOrder,
   type ConfirmOrder,
   type CreateOrder,
   type OrderStatus,
+  type RejectCancellation,
   type RejectOrder,
+  type RequestCancellation,
+  type ShipOrder,
   type SaveOrderLines,
   type SubmitOrder,
 } from "@pandora/contracts";
@@ -34,6 +38,24 @@ export const confirmOrder = (orderId: string, body: ConfirmOrder, idempotencyKey
   request(`/orders/${orderId}/confirm`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
 export const rejectOrder = (orderId: string, body: RejectOrder, idempotencyKey: string) =>
   request(`/orders/${orderId}/reject`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+export const shipOrder = (orderId: string, body: ShipOrder, idempotencyKey: string) =>
+  request(`/orders/${orderId}/shipments`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+export const requestCancellation = (orderId: string, body: RequestCancellation, idempotencyKey: string) =>
+  request(`/orders/${orderId}/cancellation-requests`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+export const approveCancellation = (orderId: string, requestId: string, body: ApproveCancellation, idempotencyKey: string) =>
+  request(`/orders/${orderId}/cancellation-requests/${requestId}/approve`, {
+    method: "POST",
+    body,
+    headers: withKey(idempotencyKey),
+    parse: parseOrder,
+  });
+export const rejectCancellation = (orderId: string, requestId: string, body: RejectCancellation, idempotencyKey: string) =>
+  request(`/orders/${orderId}/cancellation-requests/${requestId}/reject`, {
+    method: "POST",
+    body,
+    headers: withKey(idempotencyKey),
+    parse: parseOrder,
+  });
 
 function useOrdersQuery<T>(key: readonly unknown[], queryFn: () => Promise<T>, enabled = true) {
   const session = useSession();
@@ -56,4 +78,7 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   cancelled: "Cancelled",
   confirmed: "Confirmed",
   rejected: "Rejected",
+  partially_shipped: "Partially shipped",
+  shipped: "Shipped",
+  closed_partial: "Closed (partly cancelled)",
 };

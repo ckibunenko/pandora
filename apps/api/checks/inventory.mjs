@@ -121,13 +121,13 @@ try {
 
   await check("seed: one item per variant, opening balances, sums, no audit; reseed changes nothing", async () => {
     assert.equal(await db.inventoryItem.count(), await db.productVariant.count());
-    // 11 opening balances plus the reservation of the seeded confirmed order PO-000006.
-    assert.deepEqual(await counts(), { movements: 12, audits: 0, records: 0 });
+    // 11 opening balances, 3 seeded reservations (PO-000006/8/9), and 2 shipment movements (SH-000001).
+    assert.deepEqual(await counts(), { movements: 16, audits: 0, records: 0 });
     assert.deepEqual(await itemBySku("SWA-EN-STD"), { ...(await itemBySku("SWA-EN-STD")), sellable: 18, damaged: 2, reserved: 0 });
     assert.equal((await itemBySku("CWO-EN-DLX")).sellable, 0);
     await sumsMatch();
     execFileSync(process.execPath, ["dist/seed/seed.js"], { env, stdio: "pipe" });
-    assert.deepEqual(await counts(), { movements: 12, audits: 0, records: 0 });
+    assert.deepEqual(await counts(), { movements: 16, audits: 0, records: 0 });
   });
 
   await check("access: 401 without session, 403 for retailers, 403 without CSRF, no side effects", async () => {

@@ -7,7 +7,7 @@ export const MAX_STOCK_CHANGE = 1_000_000;
 /** Buckets staff may adjust directly; reserved stock changes only through order workflows. */
 export const stockBucketSchema = z.enum(["sellable", "damaged"]);
 export const movementBucketSchema = z.enum(["sellable", "damaged", "reserved"]);
-export const movementTypeSchema = z.enum(["opening_balance", "receipt", "adjustment", "reservation"]);
+export const movementTypeSchema = z.enum(["opening_balance", "receipt", "adjustment", "reservation", "shipment", "release"]);
 
 const optionalText = (max: number) => z.string().trim().min(1).max(max).optional();
 

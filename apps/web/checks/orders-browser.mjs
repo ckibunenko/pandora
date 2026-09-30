@@ -61,7 +61,7 @@ try {
   await check("retailer sees the organization's orders with statuses and estimated draft totals", async () => {
     await login("retailer@tabletop-lantern.test");
     await click("[data-test=orders-nav]");
-    await waitFor(`location.pathname === "/orders" && document.querySelectorAll("[data-test=order-row]").length === 4`, "4 orders");
+    await waitFor(`location.pathname === "/orders" && document.querySelectorAll("[data-test=order-row]").length === 5`, "5 orders");
     assert.equal(await text(`${rowSelector("PO-000001")} [data-test=order-status]`), "Draft");
     assert.match(await text(rowSelector("PO-000001")), /est\./);
     assert.equal(await text(`${rowSelector("PO-000002")} [data-test=order-status]`), "Submitted");

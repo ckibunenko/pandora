@@ -5,7 +5,17 @@ import { pageSchema, pageSizeSchema, paginatedResponseSchema } from "./paginatio
 export const MAX_ORDER_LINES = 100;
 export const MAX_LINE_QUANTITY = 10_000;
 
-export const orderStatusSchema = z.enum(["draft", "submitted", "cancelled", "confirmed", "rejected"]);
+export const orderStatusSchema = z.enum([
+  "draft",
+  "submitted",
+  "cancelled",
+  "confirmed",
+  "rejected",
+  "partially_shipped",
+  "shipped",
+  "closed_partial",
+]);
+export const cancellationRequestStatusSchema = z.enum(["pending", "approved", "rejected"]);
 export const priceStatusSchema = z.enum(["provisional", "frozen"]);
 
 const versionSchema = z.number().int().min(1);
@@ -53,7 +63,37 @@ export const rejectOrderSchema = z.strictObject({
   reason: z.string().trim().min(3).max(500),
 });
 
+export const shipOrderSchema = z.strictObject({
+  version: versionSchema,
+  items: z
+    .array(z.strictObject({ orderLineId: z.uuid(), quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY) }))
+    .min(1)
+    .max(MAX_ORDER_LINES)
+    .superRefine((items, ctx) => {
+      const seen = new Set<string>();
+      items.forEach((item, index) => {
+        if (seen.has(item.orderLineId)) {
+          ctx.addIssue({ code: "custom", path: [index, "orderLineId"], message: "Each line can appear only once." });
+        }
+        seen.add(item.orderLineId);
+      });
+    }),
+});
+
+export const requestCancellationSchema = z.strictObject({
+  version: versionSchema,
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
+export const approveCancellationSchema = z.strictObject({ version: versionSchema });
+
+export const rejectCancellationSchema = z.strictObject({
+  version: versionSchema,
+  reason: z.string().trim().min(3).max(500),
+});
+
 export const orderParamsSchema = z.object({ orderId: z.uuid() });
+export const cancellationRequestParamsSchema = z.object({ orderId: z.uuid(), requestId: z.uuid() });
 
 export const orderQuerySchema = z.strictObject({
   page: pageSchema,
@@ -81,6 +121,32 @@ export const orderLineSchema = z.object({
   availableQuantity: z.number().int().nonnegative().nullable(),
   /** Units held for this line once the order is confirmed; null before that. */
   reservedQuantity: z.number().int().nonnegative().nullable(),
+  shippedQuantity: z.number().int().nonnegative(),
+  cancelledQuantity: z.number().int().nonnegative(),
+  /** ordered − shipped − cancelled */
+  outstandingQuantity: z.number().int().nonnegative(),
+});
+
+const fulfillmentItemSchema = z.object({ orderLineId: z.uuid(), sku: z.string(), quantity: z.number().int().positive() });
+
+export const shipmentSchema = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  createdAt: z.iso.datetime(),
+  createdBy: z.object({ id: z.uuid(), displayName: z.string() }),
+  items: z.array(fulfillmentItemSchema),
+});
+
+export const cancellationRequestSchema = z.object({
+  id: z.uuid(),
+  status: cancellationRequestStatusSchema,
+  reason: z.string().nullable(),
+  requestedBy: z.object({ id: z.uuid(), displayName: z.string() }),
+  requestedAt: z.iso.datetime(),
+  decidedBy: z.object({ id: z.uuid(), displayName: z.string() }).nullable(),
+  decidedAt: z.iso.datetime().nullable(),
+  decisionReason: z.string().nullable(),
+  items: z.array(fulfillmentItemSchema),
 });
 
 const orderFields = {
@@ -112,6 +178,8 @@ export const orderSchema = z.object({
   rejectedBy: actorSchema.nullable(),
   rejectedAt: z.iso.datetime().nullable(),
   rejectionReason: z.string().nullable(),
+  shipments: z.array(shipmentSchema),
+  cancellationRequests: z.array(cancellationRequestSchema),
 });
 
 export const orderListResponseSchema = paginatedResponseSchema(orderSummarySchema);
@@ -123,6 +191,12 @@ export type SubmitOrder = z.infer<typeof submitOrderSchema>;
 export type CancelOrder = z.infer<typeof cancelOrderSchema>;
 export type ConfirmOrder = z.infer<typeof confirmOrderSchema>;
 export type RejectOrder = z.infer<typeof rejectOrderSchema>;
+export type ShipOrder = z.infer<typeof shipOrderSchema>;
+export type RequestCancellation = z.infer<typeof requestCancellationSchema>;
+export type ApproveCancellation = z.infer<typeof approveCancellationSchema>;
+export type RejectCancellation = z.infer<typeof rejectCancellationSchema>;
+export type Shipment = z.infer<typeof shipmentSchema>;
+export type CancellationRequest = z.infer<typeof cancellationRequestSchema>;
 export type OrderQuery = z.infer<typeof orderQuerySchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;
 export type Order = z.infer<typeof orderSchema>;

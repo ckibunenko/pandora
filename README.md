@@ -16,8 +16,9 @@ Built so far:
 - Order drafts and submission for retailers. Drafts are shared within the retailer organization and protected against concurrent edits. Prices are checked on submission and then frozen, and orders can be cancelled before confirmation.
 
 - Order processing for distributor staff. Staff confirm submitted orders, which reserves stock for every line at once and never oversells, or reject them with a reason. Operators start from the queue of orders awaiting processing.
+- Fulfillment: full and partial shipments that consume reserved stock, and cancellation of remaining quantities through retailer requests that staff approve or reject. The order status follows the shipped and cancelled quantities, so every order can move from draft to a final state.
 
-Shipments, cancellation after confirmation, and returns have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+Returns, notifications, and the Bug Lab have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
 ## Stack
 

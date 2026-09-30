@@ -10,8 +10,12 @@ import {
   type OrderListResponse,
   type OrderQuery,
   type OrderStatus,
+  type ApproveCancellation,
   type ConfirmOrder,
+  type RejectCancellation,
   type RejectOrder,
+  type RequestCancellation,
+  type ShipOrder,
   type SaveOrderLines,
   type SubmitOrder,
 } from "@pandora/contracts";
@@ -38,7 +42,9 @@ const LINE_SELECT = {
   edition: true,
   unitPriceMinor: true,
   lineTotalMinor: true,
-  reservation: { select: { quantityReserved: true, quantityConsumed: true, quantityReleased: true } },
+  shippedQuantity: true,
+  cancelledQuantity: true,
+  reservation: { select: { id: true, quantityReserved: true, quantityConsumed: true, quantityReleased: true } },
   variant: {
     select: {
       sku: true,
@@ -73,6 +79,30 @@ const ORDER_SELECT = {
   confirmedBy: ACTOR_SELECT,
   rejectedBy: ACTOR_SELECT,
   lines: { select: LINE_SELECT },
+  shipments: {
+    select: {
+      id: true,
+      number: true,
+      createdAt: true,
+      createdBy: ACTOR_SELECT,
+      items: { select: { orderLineId: true, quantity: true, orderLine: { select: { sku: true } } } },
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  },
+  cancellationRequests: {
+    select: {
+      id: true,
+      status: true,
+      reason: true,
+      requestedAt: true,
+      decidedAt: true,
+      decisionReason: true,
+      requestedBy: ACTOR_SELECT,
+      decidedBy: ACTOR_SELECT,
+      items: { select: { orderLineId: true, quantity: true, orderLine: { select: { sku: true } } } },
+    },
+    orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+  },
 } satisfies Prisma.OrderSelect;
 
 type OrderRecord = Prisma.OrderGetPayload<{ select: typeof ORDER_SELECT }>;
@@ -85,6 +115,9 @@ const STATUS: Record<DbStatus, OrderStatus> = {
   CANCELLED: "cancelled",
   CONFIRMED: "confirmed",
   REJECTED: "rejected",
+  PARTIALLY_SHIPPED: "partially_shipped",
+  SHIPPED: "shipped",
+  CLOSED_PARTIAL: "closed_partial",
 };
 const DB_STATUS: Record<OrderStatus, DbStatus> = {
   draft: "DRAFT",
@@ -92,7 +125,25 @@ const DB_STATUS: Record<OrderStatus, DbStatus> = {
   cancelled: "CANCELLED",
   confirmed: "CONFIRMED",
   rejected: "REJECTED",
+  partially_shipped: "PARTIALLY_SHIPPED",
+  shipped: "SHIPPED",
+  closed_partial: "CLOSED_PARTIAL",
 };
+const REQUEST_STATUS = { PENDING: "pending", APPROVED: "approved", REJECTED: "rejected" } as const;
+const OPEN_FOR_FULFILLMENT: readonly DbStatus[] = ["CONFIRMED", "PARTIALLY_SHIPPED"];
+
+const outstanding = (line: { quantity: number; shippedQuantity: number; cancelledQuantity: number }) =>
+  line.quantity - line.shippedQuantity - line.cancelledQuantity;
+
+/** Status after confirmation, derived from cumulative line quantities (overview §5). */
+function deriveFulfillmentStatus(lines: readonly { quantity: number; shippedQuantity: number; cancelledQuantity: number }[]): DbStatus {
+  const shipped = lines.reduce((sum, line) => sum + line.shippedQuantity, 0);
+  const cancelled = lines.reduce((sum, line) => sum + line.cancelledQuantity, 0);
+  const open = lines.reduce((sum, line) => sum + outstanding(line), 0);
+  if (open > 0) return shipped === 0 ? "CONFIRMED" : "PARTIALLY_SHIPPED";
+  if (cancelled === 0) return "SHIPPED";
+  return shipped === 0 ? "CANCELLED" : "CLOSED_PARTIAL";
+}
 
 const isVisible = (line: LineRecord) => line.variant.isActive && line.variant.product.isActive;
 const currentAvailable = (line: LineRecord) =>
@@ -120,6 +171,9 @@ function lineDto(line: LineRecord, status: DbStatus): OrderLine {
       // Staff decide on submitted orders against current stock.
       availableQuantity: status === "SUBMITTED" ? currentAvailable(line) : null,
       reservedQuantity,
+      shippedQuantity: line.shippedQuantity,
+      cancelledQuantity: line.cancelledQuantity,
+      outstandingQuantity: outstanding(line),
     };
   }
   return {
@@ -135,6 +189,9 @@ function lineDto(line: LineRecord, status: DbStatus): OrderLine {
     isAvailable: isVisible(line),
     availableQuantity: currentAvailable(line),
     reservedQuantity,
+    shippedQuantity: line.shippedQuantity,
+    cancelledQuantity: line.cancelledQuantity,
+    outstandingQuantity: outstanding(line),
   };
 }
 
@@ -180,6 +237,24 @@ export class OrdersService {
       rejectedBy: order.rejectedBy,
       rejectedAt: order.rejectedAt?.toISOString() ?? null,
       rejectionReason: order.rejectionReason,
+      shipments: order.shipments.map((shipment) => ({
+        id: shipment.id,
+        number: shipment.number,
+        createdAt: shipment.createdAt.toISOString(),
+        createdBy: shipment.createdBy,
+        items: shipment.items.map((item) => ({ orderLineId: item.orderLineId, sku: item.orderLine.sku ?? "", quantity: item.quantity })),
+      })),
+      cancellationRequests: order.cancellationRequests.map((request) => ({
+        id: request.id,
+        status: REQUEST_STATUS[request.status],
+        reason: request.reason,
+        requestedBy: request.requestedBy,
+        requestedAt: request.requestedAt.toISOString(),
+        decidedBy: request.decidedBy,
+        decidedAt: request.decidedAt?.toISOString() ?? null,
+        decisionReason: request.decisionReason,
+        items: request.items.map((item) => ({ orderLineId: item.orderLineId, sku: item.orderLine.sku ?? "", quantity: item.quantity })),
+      })),
     };
   }
 
@@ -427,8 +502,8 @@ export class OrdersService {
         this.assertStatus(
           order,
           ["DRAFT", "SUBMITTED"],
-          order.status === "CONFIRMED"
-            ? "Confirmed orders cannot be cancelled here yet."
+          OPEN_FOR_FULFILLMENT.includes(order.status)
+            ? "Confirmed orders are cancelled through a cancellation request."
             : "This order can no longer be cancelled.",
         );
         this.assertVersion(order, input.version);
@@ -549,6 +624,277 @@ export class OrdersService {
           action: "rejected",
           before: { status: "SUBMITTED", version: order.version },
           after: { status: "REJECTED", version: order.version + 1, reason: input.reason },
+        });
+        return this.orderDto(await this.findScoped(tx, orderId, auth));
+      },
+      200,
+    );
+  }
+
+  private correlationId(): string {
+    const correlationId = currentCorrelationId();
+    if (!correlationId) {
+      throw new Error("Order fulfillment requires request context.");
+    }
+    return correlationId;
+  }
+
+  /** Records staff-chosen quantities as one immutable shipment; each unit consumes its reservation and sellable stock. */
+  ship(orderId: string, input: ShipOrder, auth: AuthContext, key: string): Promise<Order> {
+    return this.idempotency.execute(
+      { organizationId: auth.user.organization.id, actorId: auth.user.id, operation: "order.ship", target: orderId, key },
+      input,
+      orderSchema,
+      async (tx) => {
+        const order = await this.findScoped(tx, orderId, auth);
+        this.assertStatus(order, OPEN_FOR_FULFILLMENT, "Only confirmed or partially shipped orders can be shipped.");
+        this.assertVersion(order, input.version);
+        const lines = new Map(order.lines.map((line) => [line.id, line]));
+        const unknown = input.items.flatMap((item, index) =>
+          lines.has(item.orderLineId) ? [] : [{ field: `items.${index}.orderLineId`, message: "Not a line of this order." }],
+        );
+        if (unknown.length > 0) {
+          throw ApiException.validationFailed(unknown);
+        }
+        const exceeded = input.items.flatMap((item) => {
+          const line = lines.get(item.orderLineId);
+          return line && item.quantity > outstanding(line)
+            ? [{ field: `lines.${line.sku ?? line.variant.sku}`, message: `Only ${outstanding(line)} left to ship.` }]
+            : [];
+        });
+        if (exceeded.length > 0) {
+          throw ApiException.shipmentQuantityExceeded(exceeded);
+        }
+
+        const now = this.clock.now();
+        const correlationId = this.correlationId();
+        const shipment = await tx.shipment.create({
+          data: {
+            orderId,
+            createdById: auth.user.id,
+            createdAt: now,
+            items: { create: input.items.map((item) => ({ orderLineId: item.orderLineId, quantity: item.quantity })) },
+          },
+          select: { number: true },
+        });
+        const shippedBySku: Record<string, number> = {};
+        for (const item of input.items) {
+          const line = lines.get(item.orderLineId);
+          if (!line?.reservation) {
+            throw new Error(`Line ${item.orderLineId} of a confirmed order has no reservation.`);
+          }
+          await tx.orderLine.update({ where: { id: line.id }, data: { shippedQuantity: { increment: item.quantity } } });
+          await tx.stockReservation.update({ where: { id: line.reservation.id }, data: { quantityConsumed: { increment: item.quantity } } });
+          // Sellable and reserved drop together, so availability is unchanged by shipping.
+          const stock = await tx.inventoryItem.update({
+            where: { variantId: line.variantId },
+            data: { sellable: { decrement: item.quantity }, reserved: { decrement: item.quantity }, updatedAt: now },
+            select: { sellable: true, reserved: true, damaged: true },
+          });
+          for (const bucket of ["SELLABLE", "RESERVED"] as const) {
+            await tx.inventoryMovement.create({
+              data: {
+                variantId: line.variantId,
+                type: "SHIPMENT",
+                bucket,
+                delta: -item.quantity,
+                sellableAfter: stock.sellable,
+                reservedAfter: stock.reserved,
+                damagedAfter: stock.damaged,
+                reference: shipment.number,
+                reservationId: line.reservation.id,
+                actorId: auth.user.id,
+                organizationId: auth.user.organization.id,
+                correlationId,
+                occurredAt: now,
+              },
+            });
+          }
+          shippedBySku[line.sku ?? line.variant.sku] = item.quantity;
+        }
+        const shippedQuantities = new Map(input.items.map((item) => [item.orderLineId, item.quantity]));
+        const status = deriveFulfillmentStatus(
+          order.lines.map((line) => ({ ...line, shippedQuantity: line.shippedQuantity + (shippedQuantities.get(line.id) ?? 0) })),
+        );
+        await this.bumpVersion(tx, order, { status });
+        await recordAudit(tx, this.clock, auth, {
+          entityType: "order",
+          entityId: orderId,
+          action: "shipped",
+          before: { status: order.status, version: order.version },
+          after: { status, version: order.version + 1, shipment: shipment.number, shipped: shippedBySku },
+        });
+        return this.orderDto(await this.findScoped(tx, orderId, auth));
+      },
+      200,
+    );
+  }
+
+  /** Retailer asks to cancel every unit not yet shipped; nothing is released until staff approve. */
+  async requestCancellation(orderId: string, input: RequestCancellation, auth: AuthContext, key: string): Promise<Order> {
+    try {
+      return await this.idempotency.execute(
+        { organizationId: auth.user.organization.id, actorId: auth.user.id, operation: "order.cancellation_request", target: orderId, key },
+        input,
+        orderSchema,
+        async (tx) => {
+          const order = await this.findScoped(tx, orderId, auth);
+          this.assertStatus(order, OPEN_FOR_FULFILLMENT, "Only confirmed or partially shipped orders accept cancellation requests.");
+          this.assertVersion(order, input.version);
+          if (order.cancellationRequests.some((request) => request.status === "PENDING")) {
+            throw ApiException.cancellationRequestPending();
+          }
+          const open = order.lines.filter((line) => outstanding(line) > 0);
+          if (open.length === 0) {
+            throw ApiException.invalidOrderTransition("Nothing is left to cancel.");
+          }
+          await tx.cancellationRequest.create({
+            data: {
+              orderId,
+              status: "PENDING",
+              reason: input.reason ?? null,
+              requestedById: auth.user.id,
+              requestedAt: this.clock.now(),
+              items: { create: open.map((line) => ({ orderLineId: line.id, quantity: outstanding(line) })) },
+            },
+          });
+          await this.bumpVersion(tx, order, {});
+          await recordAudit(tx, this.clock, auth, {
+            entityType: "order",
+            entityId: orderId,
+            action: "cancellation_requested",
+            before: { version: order.version },
+            after: {
+              version: order.version + 1,
+              reason: input.reason ?? null,
+              requested: Object.fromEntries(open.map((line) => [line.sku ?? line.variant.sku, outstanding(line)])),
+            },
+          });
+          return this.orderDto(await this.findScoped(tx, orderId, auth));
+        },
+        200,
+      );
+    } catch (error: unknown) {
+      // The one-pending-request index can fire when two requests race past the check above.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw ApiException.cancellationRequestPending();
+      }
+      throw error;
+    }
+  }
+
+  private pendingRequest(order: OrderRecord, requestId: string) {
+    const request = order.cancellationRequests.find((candidate) => candidate.id === requestId);
+    if (!request) {
+      throw ApiException.notFound("Cancellation request not found.");
+    }
+    this.assertStatus(order, OPEN_FOR_FULFILLMENT, "This order is closed; its cancellation request can no longer be decided.");
+    if (request.status !== "PENDING") {
+      throw ApiException.invalidOrderTransition("This cancellation request was already decided.");
+    }
+    return request;
+  }
+
+  /** Approves the whole request after rechecking it against current outstanding quantities. */
+  approveCancellation(orderId: string, requestId: string, input: ApproveCancellation, auth: AuthContext, key: string): Promise<Order> {
+    return this.idempotency.execute(
+      { organizationId: auth.user.organization.id, actorId: auth.user.id, operation: "order.cancellation_approve", target: requestId, key },
+      input,
+      orderSchema,
+      async (tx) => {
+        const order = await this.findScoped(tx, orderId, auth);
+        const request = this.pendingRequest(order, requestId);
+        this.assertVersion(order, input.version);
+        const lines = new Map(order.lines.map((line) => [line.id, line]));
+        const conflicts = request.items.flatMap((item) => {
+          const line = lines.get(item.orderLineId);
+          return line && item.quantity > outstanding(line)
+            ? [{ field: `lines.${line.sku ?? line.variant.sku}`, message: `Requested ${item.quantity}, only ${outstanding(line)} still outstanding.` }]
+            : [];
+        });
+        if (conflicts.length > 0) {
+          throw ApiException.cancellationConflict(conflicts);
+        }
+
+        const now = this.clock.now();
+        const correlationId = this.correlationId();
+        const released: Record<string, number> = {};
+        for (const item of request.items) {
+          const line = lines.get(item.orderLineId);
+          if (!line?.reservation) {
+            throw new Error(`Line ${item.orderLineId} of a confirmed order has no reservation.`);
+          }
+          await tx.orderLine.update({ where: { id: line.id }, data: { cancelledQuantity: { increment: item.quantity } } });
+          await tx.stockReservation.update({ where: { id: line.reservation.id }, data: { quantityReleased: { increment: item.quantity } } });
+          const stock = await tx.inventoryItem.update({
+            where: { variantId: line.variantId },
+            data: { reserved: { decrement: item.quantity }, updatedAt: now },
+            select: { sellable: true, reserved: true, damaged: true },
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              variantId: line.variantId,
+              type: "RELEASE",
+              bucket: "RESERVED",
+              delta: -item.quantity,
+              sellableAfter: stock.sellable,
+              reservedAfter: stock.reserved,
+              damagedAfter: stock.damaged,
+              reference: order.number,
+              reservationId: line.reservation.id,
+              actorId: auth.user.id,
+              organizationId: auth.user.organization.id,
+              correlationId,
+              occurredAt: now,
+            },
+          });
+          released[line.sku ?? line.variant.sku] = item.quantity;
+        }
+        await tx.cancellationRequest.update({
+          where: { id: requestId },
+          data: { status: "APPROVED", decidedAt: now, decidedById: auth.user.id },
+        });
+        const cancelledQuantities = new Map(request.items.map((item) => [item.orderLineId, item.quantity]));
+        const status = deriveFulfillmentStatus(
+          order.lines.map((line) => ({ ...line, cancelledQuantity: line.cancelledQuantity + (cancelledQuantities.get(line.id) ?? 0) })),
+        );
+        await this.bumpVersion(tx, order, {
+          status,
+          ...(status === "CANCELLED" ? { cancelledAt: now, cancelledById: auth.user.id, cancellationReason: request.reason } : {}),
+        });
+        await recordAudit(tx, this.clock, auth, {
+          entityType: "order",
+          entityId: orderId,
+          action: "cancellation_approved",
+          before: { status: order.status, version: order.version },
+          after: { status, version: order.version + 1, requestId, released },
+        });
+        return this.orderDto(await this.findScoped(tx, orderId, auth));
+      },
+      200,
+    );
+  }
+
+  rejectCancellation(orderId: string, requestId: string, input: RejectCancellation, auth: AuthContext, key: string): Promise<Order> {
+    return this.idempotency.execute(
+      { organizationId: auth.user.organization.id, actorId: auth.user.id, operation: "order.cancellation_reject", target: requestId, key },
+      input,
+      orderSchema,
+      async (tx) => {
+        const order = await this.findScoped(tx, orderId, auth);
+        this.pendingRequest(order, requestId);
+        this.assertVersion(order, input.version);
+        await tx.cancellationRequest.update({
+          where: { id: requestId },
+          data: { status: "REJECTED", decidedAt: this.clock.now(), decidedById: auth.user.id, decisionReason: input.reason },
+        });
+        await this.bumpVersion(tx, order, {});
+        await recordAudit(tx, this.clock, auth, {
+          entityType: "order",
+          entityId: orderId,
+          action: "cancellation_rejected",
+          before: { version: order.version },
+          after: { version: order.version + 1, requestId, reason: input.reason },
         });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },

@@ -128,3 +128,29 @@
   color: var(--color-success);
   font-weight: 600;
 }
+
+.status[data-status="partially_shipped"] {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.status[data-status="shipped"],
+.status[data-status="closed_partial"] {
+  color: var(--color-on-primary);
+  background: var(--color-text-muted);
+  border-color: var(--color-text-muted);
+}
+
+.records {
+  margin-top: var(--space-6);
+}
+
+.records h2 {
+  margin-bottom: var(--space-3);
+}
+
+.records ol {
+  padding-left: var(--space-6);
+  display: grid;
+  gap: var(--space-2);
+}

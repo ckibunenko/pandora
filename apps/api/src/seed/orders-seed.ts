@@ -2,7 +2,7 @@ import type { Prisma } from "../generated/prisma/client.js";
 
 const orderId = (n: number) => `01920000-0000-7000-8000-${String(3000 + n).padStart(12, "0")}`;
 
-type SeedStatus = "DRAFT" | "SUBMITTED" | "CANCELLED" | "CONFIRMED" | "REJECTED";
+type SeedStatus = "DRAFT" | "SUBMITTED" | "CANCELLED" | "CONFIRMED" | "REJECTED" | "PARTIALLY_SHIPPED";
 
 interface SeedOrder {
   n: number;
@@ -12,6 +12,10 @@ interface SeedOrder {
   createdAt: string;
   lines: readonly { sku: string; quantity: number }[];
   rejectionReason?: string;
+  /** Shipped after confirmation, as one shipment with a fixed number. */
+  shipment?: { number: string; quantities: Record<string, number> };
+  /** A retailer cancellation request left pending after confirmation. */
+  pendingCancellationReason?: string;
 }
 
 const ORDERS: readonly SeedOrder[] = [
@@ -82,6 +86,24 @@ const ORDERS: readonly SeedOrder[] = [
     lines: [{ sku: "TKC-EN-STD", quantity: 5 }],
     rejectionReason: "Duplicate of an earlier order",
   },
+  {
+    n: 8,
+    number: "PO-000008",
+    organization: "tabletopLantern",
+    status: "PARTIALLY_SHIPPED",
+    createdAt: "2026-01-17T09:00:00.000Z",
+    lines: [{ sku: "LOV-EN-STD", quantity: 5 }],
+    shipment: { number: "SH-000001", quantities: { "LOV-EN-STD": 2 } },
+  },
+  {
+    n: 9,
+    number: "PO-000009",
+    organization: "cardboardKeep",
+    status: "CONFIRMED",
+    createdAt: "2026-01-18T09:00:00.000Z",
+    lines: [{ sku: "MBM-SR-STD", quantity: 2 }],
+    pendingCancellationReason: "Store event was postponed",
+  },
 ];
 
 export interface SeedActor {
@@ -113,6 +135,7 @@ export async function seedOrders(
     });
     const bySku = new Map(variants.map((variant) => [variant.sku, variant]));
     const submitted = fixture.status !== "DRAFT" && fixture.status !== "CANCELLED";
+    const confirmed = fixture.status === "CONFIRMED" || fixture.status === "PARTIALLY_SHIPPED";
     let total = 0n;
 
     const order = await tx.order.create({
@@ -150,7 +173,7 @@ export async function seedOrders(
           }),
         },
       },
-      select: { lines: { select: { id: true, variantId: true, quantity: true } } },
+      select: { lines: { select: { id: true, variantId: true, quantity: true, sku: true } } },
     });
 
     if (fixture.status === "CANCELLED") {
@@ -165,12 +188,14 @@ export async function seedOrders(
         data: { status: "SUBMITTED", version: 2, submittedAt: hour(1), submittedById: retailer.userId, totalMinor: total, updatedAt: hour(1) },
       });
     }
-    if (fixture.status === "CONFIRMED") {
+    const reservations = new Map<string, string>();
+    if (confirmed) {
       for (const line of order.lines) {
         const reservation = await tx.stockReservation.create({
           data: { orderLineId: line.id, variantId: line.variantId, quantityReserved: line.quantity, createdAt: hour(2) },
           select: { id: true },
         });
+        reservations.set(line.id, reservation.id);
         const item = await tx.inventoryItem.update({
           where: { variantId: line.variantId },
           data: { reserved: { increment: line.quantity }, updatedAt: hour(2) },
@@ -198,6 +223,66 @@ export async function seedOrders(
         where: { id },
         data: { status: "CONFIRMED", version: 3, confirmedAt: hour(2), confirmedById: operator.userId, updatedAt: hour(2) },
       });
+    }
+    if (fixture.shipment) {
+      const shipment = fixture.shipment;
+      const shippedLines = order.lines.filter((line) => line.sku !== null && shipment.quantities[line.sku]);
+      await tx.shipment.create({
+        data: {
+          number: shipment.number,
+          orderId: id,
+          createdById: operator.userId,
+          createdAt: hour(3),
+          items: { create: shippedLines.map((line) => ({ orderLineId: line.id, quantity: shipment.quantities[line.sku ?? ""] ?? 0 })) },
+        },
+      });
+      for (const line of shippedLines) {
+        const quantity = shipment.quantities[line.sku ?? ""] ?? 0;
+        const reservationId = reservations.get(line.id);
+        if (!reservationId) {
+          throw new Error(`Seed shipment ${shipment.number} needs a reserved line.`);
+        }
+        await tx.orderLine.update({ where: { id: line.id }, data: { shippedQuantity: quantity } });
+        await tx.stockReservation.update({ where: { id: reservationId }, data: { quantityConsumed: quantity } });
+        const item = await tx.inventoryItem.update({
+          where: { variantId: line.variantId },
+          data: { sellable: { decrement: quantity }, reserved: { decrement: quantity }, updatedAt: hour(3) },
+          select: { sellable: true, reserved: true, damaged: true },
+        });
+        for (const bucket of ["SELLABLE", "RESERVED"] as const) {
+          await tx.inventoryMovement.create({
+            data: {
+              variantId: line.variantId,
+              type: "SHIPMENT",
+              bucket,
+              delta: -quantity,
+              sellableAfter: item.sellable,
+              reservedAfter: item.reserved,
+              damagedAfter: item.damaged,
+              reference: shipment.number,
+              reservationId,
+              actorId: operator.userId,
+              organizationId: operator.organizationId,
+              correlationId: `seed-${shipment.number}`,
+              occurredAt: hour(3),
+            },
+          });
+        }
+      }
+      await tx.order.update({ where: { id }, data: { status: fixture.status, version: 4, updatedAt: hour(3) } });
+    }
+    if (fixture.pendingCancellationReason) {
+      await tx.cancellationRequest.create({
+        data: {
+          orderId: id,
+          status: "PENDING",
+          reason: fixture.pendingCancellationReason,
+          requestedById: retailer.userId,
+          requestedAt: hour(3),
+          items: { create: order.lines.map((line) => ({ orderLineId: line.id, quantity: line.quantity })) },
+        },
+      });
+      await tx.order.update({ where: { id }, data: { version: 4, updatedAt: hour(3) } });
     }
     if (fixture.status === "REJECTED") {
       await tx.order.update({

@@ -69,6 +69,18 @@ export class ApiException extends HttpException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.variantUnavailable, "Some items are no longer available.", details);
   }
 
+  static shipmentQuantityExceeded(details: readonly ErrorDetail[]): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.shipmentQuantityExceeded, "A shipment cannot exceed the outstanding quantity.", details);
+  }
+
+  static cancellationRequestPending(): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationRequestPending, "A cancellation request for this order is already pending.");
+  }
+
+  static cancellationConflict(details: readonly ErrorDetail[]): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationConflict, "The order changed since the cancellation was requested.", details);
+  }
+
   static concurrentModification(): ApiException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.concurrentModification, "The record changed concurrently. Please retry.");
   }

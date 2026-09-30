@@ -1,6 +1,8 @@
 import { applyDecorators, Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from "@nestjs/common";
 import { ApiBody, ApiCookieAuth, ApiHeader, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import {
+  approveCancellationSchema,
+  cancellationRequestParamsSchema,
   cancelOrderSchema,
   confirmOrderSchema,
   createOrderSchema,
@@ -9,17 +11,24 @@ import {
   orderParamsSchema,
   orderQuerySchema,
   orderSchema,
+  rejectCancellationSchema,
   rejectOrderSchema,
+  requestCancellationSchema,
   saveOrderLinesSchema,
+  shipOrderSchema,
   submitOrderSchema,
+  type ApproveCancellation,
   type CancelOrder,
   type ConfirmOrder,
   type CreateOrder,
   type Order,
   type OrderListResponse,
   type OrderQuery,
+  type RejectCancellation,
   type RejectOrder,
+  type RequestCancellation,
   type SaveOrderLines,
+  type ShipOrder,
   type SubmitOrder,
   type UserRole,
 } from "@pandora/contracts";
@@ -36,6 +45,7 @@ const ERROR_SCHEMA = openApiSchema(errorEnvelopeSchema);
 const ORDER_SCHEMA = openApiSchema(orderSchema);
 
 type OrderParams = z.infer<typeof orderParamsSchema>;
+type RequestParams = z.infer<typeof cancellationRequestParamsSchema>;
 const STAFF: readonly UserRole[] = ["operator", "administrator"];
 
 function queryParams(schema: z.ZodType) {
@@ -186,5 +196,82 @@ export class OrdersController {
     @CurrentAuth() auth: AuthContext,
   ): Promise<Order> {
     return this.orders.reject(params.orderId, body, auth, key);
+  }
+
+  @Post(":orderId/shipments")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @orderMutation(
+    shipOrderSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, VERSION_CONFLICT, SHIPMENT_QUANTITY_EXCEEDED, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  ship(
+    @Param(new ZodValidationPipe(orderParamsSchema)) params: OrderParams,
+    @Body(new ZodValidationPipe(shipOrderSchema)) body: ShipOrder,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.orders.ship(params.orderId, body, auth, key);
+  }
+
+  @Post(":orderId/cancellation-requests")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @orderMutation(
+    requestCancellationSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, VERSION_CONFLICT, CANCELLATION_REQUEST_PENDING, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+  )
+  requestCancellation(
+    @Param(new ZodValidationPipe(orderParamsSchema)) params: OrderParams,
+    @Body(new ZodValidationPipe(requestCancellationSchema)) body: RequestCancellation,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.orders.requestCancellation(params.orderId, body, auth, key);
+  }
+
+  @Post(":orderId/cancellation-requests/:requestId/approve")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @ApiParam({ name: "requestId", format: "uuid" })
+  @orderMutation(
+    approveCancellationSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, VERSION_CONFLICT, CANCELLATION_CONFLICT, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  approveCancellation(
+    @Param(new ZodValidationPipe(cancellationRequestParamsSchema)) params: RequestParams,
+    @Body(new ZodValidationPipe(approveCancellationSchema)) body: ApproveCancellation,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.orders.approveCancellation(params.orderId, params.requestId, body, auth, key);
+  }
+
+  @Post(":orderId/cancellation-requests/:requestId/reject")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @ApiParam({ name: "requestId", format: "uuid" })
+  @orderMutation(
+    rejectCancellationSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  rejectCancellation(
+    @Param(new ZodValidationPipe(cancellationRequestParamsSchema)) params: RequestParams,
+    @Body(new ZodValidationPipe(rejectCancellationSchema)) body: RejectCancellation,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.orders.rejectCancellation(params.orderId, params.requestId, body, auth, key);
   }
 }

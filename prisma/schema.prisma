@@ -33,24 +33,27 @@ model Organization {
 }
 
 model User {
-  id                 String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  organizationId     String              @map("organization_id") @db.Uuid
-  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  id                     String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  organizationId         String                @map("organization_id") @db.Uuid
+  organization           Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   /// Stored lowercase; the unique index relies on that normalization.
-  email              String              @unique
-  displayName        String              @map("display_name")
-  passwordHash       String              @map("password_hash")
-  role               UserRole
-  isActive           Boolean             @default(true) @map("is_active")
-  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  sessions           Session[]
-  inventoryMovements InventoryMovement[]
-  createdOrders      Order[]             @relation("OrderCreatedBy")
-  submittedOrders    Order[]             @relation("OrderSubmittedBy")
-  cancelledOrders    Order[]             @relation("OrderCancelledBy")
-  confirmedOrders    Order[]             @relation("OrderConfirmedBy")
-  rejectedOrders     Order[]             @relation("OrderRejectedBy")
+  email                  String                @unique
+  displayName            String                @map("display_name")
+  passwordHash           String                @map("password_hash")
+  role                   UserRole
+  isActive               Boolean               @default(true) @map("is_active")
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions               Session[]
+  inventoryMovements     InventoryMovement[]
+  createdOrders          Order[]               @relation("OrderCreatedBy")
+  submittedOrders        Order[]               @relation("OrderSubmittedBy")
+  cancelledOrders        Order[]               @relation("OrderCancelledBy")
+  confirmedOrders        Order[]               @relation("OrderConfirmedBy")
+  rejectedOrders         Order[]               @relation("OrderRejectedBy")
+  createdShipments       Shipment[]
+  requestedCancellations CancellationRequest[] @relation("CancellationRequestedBy")
+  decidedCancellations   CancellationRequest[] @relation("CancellationDecidedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -138,6 +141,8 @@ enum MovementType {
   RECEIPT
   ADJUSTMENT
   RESERVATION
+  SHIPMENT
+  RELEASE
 }
 
 enum StockBucket {
@@ -219,39 +224,44 @@ enum OrderStatus {
   CANCELLED
   CONFIRMED
   REJECTED
+  PARTIALLY_SHIPPED
+  SHIPPED
+  CLOSED_PARTIAL
 }
 
 model Order {
-  id                 String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id                   String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
   /// Generated from a sequence by the database default; seed rows use reserved low numbers.
-  number             String       @unique @default(dbgenerated("('PO-'::text || lpad((nextval('orders_number_seq'::regclass))::text, 6, '0'::text))")) @db.VarChar(20)
-  organizationId     String       @map("organization_id") @db.Uuid
-  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  status             OrderStatus
+  number               String                @unique @default(dbgenerated("('PO-'::text || lpad((nextval('orders_number_seq'::regclass))::text, 6, '0'::text))")) @db.VarChar(20)
+  organizationId       String                @map("organization_id") @db.Uuid
+  organization         Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  status               OrderStatus
   /// Increases with every mutation; clients send it to detect concurrent edits.
-  version            Int          @default(1)
-  currency           String       @db.Char(3)
+  version              Int                   @default(1)
+  currency             String                @db.Char(3)
   /// Frozen at submission; null while the order is a draft.
-  totalMinor         BigInt?      @map("total_minor")
-  createdById        String       @map("created_by_id") @db.Uuid
-  createdBy          User         @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-  createdAt          DateTime     @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime     @map("updated_at") @db.Timestamptz(3)
-  submittedById      String?      @map("submitted_by_id") @db.Uuid
-  submittedBy        User?        @relation("OrderSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict)
-  submittedAt        DateTime?    @map("submitted_at") @db.Timestamptz(3)
-  cancelledById      String?      @map("cancelled_by_id") @db.Uuid
-  cancelledBy        User?        @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
-  cancelledAt        DateTime?    @map("cancelled_at") @db.Timestamptz(3)
-  cancellationReason String?      @map("cancellation_reason") @db.VarChar(500)
-  confirmedById      String?      @map("confirmed_by_id") @db.Uuid
-  confirmedBy        User?        @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
-  confirmedAt        DateTime?    @map("confirmed_at") @db.Timestamptz(3)
-  rejectedById       String?      @map("rejected_by_id") @db.Uuid
-  rejectedBy         User?        @relation("OrderRejectedBy", fields: [rejectedById], references: [id], onDelete: Restrict)
-  rejectedAt         DateTime?    @map("rejected_at") @db.Timestamptz(3)
-  rejectionReason    String?      @map("rejection_reason") @db.VarChar(500)
-  lines              OrderLine[]
+  totalMinor           BigInt?               @map("total_minor")
+  createdById          String                @map("created_by_id") @db.Uuid
+  createdBy            User                  @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt            DateTime              @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime              @map("updated_at") @db.Timestamptz(3)
+  submittedById        String?               @map("submitted_by_id") @db.Uuid
+  submittedBy          User?                 @relation("OrderSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict)
+  submittedAt          DateTime?             @map("submitted_at") @db.Timestamptz(3)
+  cancelledById        String?               @map("cancelled_by_id") @db.Uuid
+  cancelledBy          User?                 @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledAt          DateTime?             @map("cancelled_at") @db.Timestamptz(3)
+  cancellationReason   String?               @map("cancellation_reason") @db.VarChar(500)
+  confirmedById        String?               @map("confirmed_by_id") @db.Uuid
+  confirmedBy          User?                 @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt          DateTime?             @map("confirmed_at") @db.Timestamptz(3)
+  rejectedById         String?               @map("rejected_by_id") @db.Uuid
+  rejectedBy           User?                 @relation("OrderRejectedBy", fields: [rejectedById], references: [id], onDelete: Restrict)
+  rejectedAt           DateTime?             @map("rejected_at") @db.Timestamptz(3)
+  rejectionReason      String?               @map("rejection_reason") @db.VarChar(500)
+  lines                OrderLine[]
+  shipments            Shipment[]
+  cancellationRequests CancellationRequest[]
 
   @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
@@ -260,20 +270,25 @@ model Order {
 
 /// Snapshot columns stay null while the order is a draft and are frozen at submission.
 model OrderLine {
-  id             String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orderId        String            @map("order_id") @db.Uuid
-  order          Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  variantId      String            @map("variant_id") @db.Uuid
-  variant        ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  quantity       Int
-  sku            String?           @db.VarChar(40)
-  productName    String?           @map("product_name") @db.VarChar(120)
-  language       String?           @db.VarChar(2)
-  edition        String?           @db.VarChar(80)
-  unitPriceMinor Int?              @map("unit_price_minor")
-  lineTotalMinor BigInt?           @map("line_total_minor")
+  id                String                    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderId           String                    @map("order_id") @db.Uuid
+  order             Order                     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variantId         String                    @map("variant_id") @db.Uuid
+  variant           ProductVariant            @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Int
+  sku               String?                   @db.VarChar(40)
+  productName       String?                   @map("product_name") @db.VarChar(120)
+  language          String?                   @db.VarChar(2)
+  edition           String?                   @db.VarChar(80)
+  unitPriceMinor    Int?                      @map("unit_price_minor")
+  lineTotalMinor    BigInt?                   @map("line_total_minor")
+  /// Cumulative quantities after confirmation; outstanding = quantity - shipped - cancelled.
+  shippedQuantity   Int                       @default(0) @map("shipped_quantity")
+  cancelledQuantity Int                       @default(0) @map("cancelled_quantity")
+  shipmentItems     ShipmentItem[]
+  cancellationItems CancellationRequestItem[]
   /// Created when the order is confirmed.
-  reservation    StockReservation?
+  reservation       StockReservation?
 
   @@unique([orderId, variantId])
   @@map("order_lines")
@@ -294,4 +309,69 @@ model StockReservation {
 
   @@index([variantId])
   @@map("stock_reservations")
+}
+
+enum CancellationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Append-only dispatch record; a database trigger rejects updates and deletes.
+model Shipment {
+  id          String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  number      String         @unique @default(dbgenerated("('SH-'::text || lpad((nextval('shipments_number_seq'::regclass))::text, 6, '0'::text))")) @db.VarChar(20)
+  orderId     String         @map("order_id") @db.Uuid
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  createdById String         @map("created_by_id") @db.Uuid
+  createdBy   User           @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime       @map("created_at") @db.Timestamptz(3)
+  items       ShipmentItem[]
+
+  @@index([orderId, createdAt])
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  shipmentId  String    @map("shipment_id") @db.Uuid
+  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  orderLineId String    @map("order_line_id") @db.Uuid
+  orderLine   OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  quantity    Int
+
+  @@unique([shipmentId, orderLineId])
+  @@map("shipment_items")
+}
+
+/// A retailer's request to cancel all remaining quantities of a confirmed order; staff approve or reject it whole.
+model CancellationRequest {
+  id             String                    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderId        String                    @map("order_id") @db.Uuid
+  order          Order                     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status         CancellationRequestStatus
+  reason         String?                   @db.VarChar(500)
+  requestedById  String                    @map("requested_by_id") @db.Uuid
+  requestedBy    User                      @relation("CancellationRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedAt    DateTime                  @map("requested_at") @db.Timestamptz(3)
+  decidedById    String?                   @map("decided_by_id") @db.Uuid
+  decidedBy      User?                     @relation("CancellationDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+  decidedAt      DateTime?                 @map("decided_at") @db.Timestamptz(3)
+  decisionReason String?                   @map("decision_reason") @db.VarChar(500)
+  items          CancellationRequestItem[]
+
+  @@index([orderId, requestedAt])
+  @@map("cancellation_requests")
+}
+
+model CancellationRequestItem {
+  id          String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId   String              @map("request_id") @db.Uuid
+  request     CancellationRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  orderLineId String              @map("order_line_id") @db.Uuid
+  orderLine   OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  quantity    Int
+
+  @@unique([requestId, orderLineId])
+  @@map("cancellation_request_items")
 }

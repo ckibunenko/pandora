@@ -69,6 +69,8 @@ const MOVEMENT_TYPES: Record<MovementRecord["type"], MovementType> = {
   RECEIPT: "receipt",
   ADJUSTMENT: "adjustment",
   RESERVATION: "reservation",
+  SHIPMENT: "shipment",
+  RELEASE: "release",
 };
 const BUCKETS: Record<MovementRecord["bucket"], MovementBucket> = {
   SELLABLE: "sellable",

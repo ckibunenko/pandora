@@ -19,6 +19,9 @@ export const ERROR_CODES = {
   priceChanged: "PRICE_CHANGED",
   invalidOrderTransition: "INVALID_ORDER_TRANSITION",
   variantUnavailable: "VARIANT_UNAVAILABLE",
+  shipmentQuantityExceeded: "SHIPMENT_QUANTITY_EXCEEDED",
+  cancellationRequestPending: "CANCELLATION_REQUEST_PENDING",
+  cancellationConflict: "CANCELLATION_CONFLICT",
 } as const;
 
 export const errorDetailSchema = z.object({

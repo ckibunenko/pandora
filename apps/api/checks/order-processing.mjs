@@ -66,7 +66,7 @@ try {
     const before = await stockState();
     qa.seed();
     assert.deepEqual(await stockState(), before);
-    assert.equal(await db.order.count(), 7);
+    assert.equal(await db.order.count(), 9);
   });
 
   await check("access: retailers 403, no session 401, CSRF and Idempotency-Key required; no side effects", async () => {
@@ -89,7 +89,7 @@ try {
     assert.deepEqual(queue.body.items.map((o) => o.number), ["PO-000002", "PO-000005"]);
     const submittedAt = queue.body.items.map((o) => o.submittedAt);
     assert.deepEqual(submittedAt, [...submittedAt].sort());
-    assert.deepEqual((await call("/orders?status=confirmed", { actor: admin })).body.items.map((o) => o.number), ["PO-000006"]);
+    assert.deepEqual((await call("/orders?status=confirmed", { actor: admin })).body.items.map((o) => o.number), ["PO-000009", "PO-000006"]);
     assert.deepEqual((await call("/orders?status=rejected", { actor: operator })).body.items.map((o) => o.number), ["PO-000007"]);
     const detail = await call(`/orders/${po5.id}`, { actor: operator });
     assert.deepEqual(
