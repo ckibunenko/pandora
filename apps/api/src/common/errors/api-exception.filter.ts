@@ -28,6 +28,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
       });
     }
 
+    if (exception instanceof ApiException && exception.headers) {
+      response.set(exception.headers);
+    }
     response.status(status).json(envelope);
   }
 

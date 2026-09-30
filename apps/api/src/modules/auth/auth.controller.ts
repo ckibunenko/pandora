@@ -37,6 +37,12 @@ export class AuthController {
   @ApiResponse({ status: 200, description: "Session created; sets the session cookie.", schema: SESSION_SCHEMA })
   @ApiResponse({ status: 401, description: "INVALID_CREDENTIALS", schema: ERROR_SCHEMA })
   @ApiResponse({ status: 422, description: "VALIDATION_FAILED", schema: ERROR_SCHEMA })
+  @ApiResponse({
+    status: 429,
+    description: "TOO_MANY_LOGIN_ATTEMPTS: more than 5 attempts for this email in 15 minutes, whether or not the account exists.",
+    schema: ERROR_SCHEMA,
+    headers: { "Retry-After": { description: "Seconds until another attempt is allowed.", schema: { type: "integer" } } },
+  })
   async login(
     @Body(new ZodValidationPipe(loginRequestSchema)) body: LoginRequest,
     @Res({ passthrough: true }) response: Response,

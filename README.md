@@ -9,7 +9,7 @@ It is not a real commerce service: there are no real payments, no real customer 
 Built so far:
 
 - Architecture: web app, API, shared contracts, and PostgreSQL database.
-- Sign-in with server-side sessions for retailers, distributor operators, and administrators, using seeded demo accounts.
+- Sign-in with server-side sessions for retailers, distributor operators, and administrators, using seeded demo accounts. Repeated failed sign-ins for the same email are paused for 15 minutes, and old sessions are cleaned up automatically.
 - Catalog browsing, language/edition variants, EUR prices, administrator management, and transactional catalog audit. The seed includes eight fictional products and eleven variants.
 - Inventory per SKU (sellable, reserved, damaged) with stock receipts and adjustments by distributor staff. Every change is an immutable movement with audit. Changes are safe to retry thanks to `Idempotency-Key`, and they don't oversell under concurrency. Retailers see each variant's available quantity in the catalog.
 

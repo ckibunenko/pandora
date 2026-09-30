@@ -7,6 +7,7 @@ export class ApiException extends HttpException {
     readonly code: ErrorCode,
     message: string,
     readonly details?: readonly ErrorDetail[],
+    readonly headers?: Readonly<Record<string, string>>,
   ) {
     super(message, status);
   }
@@ -17,6 +18,18 @@ export class ApiException extends HttpException {
 
   static invalidCredentials(): ApiException {
     return new ApiException(HttpStatus.UNAUTHORIZED, ERROR_CODES.invalidCredentials, "Invalid email or password.");
+  }
+
+  /** The same answer for every email, known or not, so the limit reveals nothing about accounts. */
+  static tooManyLoginAttempts(retryAfterSeconds: number): ApiException {
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    return new ApiException(
+      HttpStatus.TOO_MANY_REQUESTS,
+      ERROR_CODES.tooManyLoginAttempts,
+      `Too many sign-in attempts. Try again in ${minutes} ${minutes === 1 ? "minute" : "minutes"}.`,
+      undefined,
+      { "Retry-After": String(retryAfterSeconds) },
+    );
   }
 
   static forbidden(): ApiException {

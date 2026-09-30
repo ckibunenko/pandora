@@ -1,70 +1,78 @@
 ## Current Feature
 
-Test and CI setup. One command runs every application check on fresh, disposable databases, and GitHub Actions runs it for every push to `main` and every pull request (overview §10–§11, coding standards §9).
+Login rate limiting and expired-session cleanup. Repeated failed sign-ins for the same email are temporarily refused, and sessions that can no longer be used are removed automatically. Both items are carried over from the auth feature ([auth-sessions.md](features/auth-sessions.md): "needed before a public demo exists").
 
 ## Status
 
-Completed — merged to `main` as `d0bb179` (2026-09-30) through PR #1; the GitHub Actions run passed.
+Implemented and verified locally on `feature/auth-hardening`; CI runs on the pull request.
 
 ## Goal
 
-A regression cannot reach `main` unnoticed: gates, API/PostgreSQL checks, and browser checks run automatically against real PostgreSQL. The same command runs locally, so nobody has to create QA databases by hand.
+Guessing a password becomes impractical without revealing which accounts exist, and the sessions table no longer grows without bound.
 
 ## Scope and decisions (2026-09-30)
 
-- Branch: `feature/ci`.
-- **Ownership (overview §11 open decision):**
-  - Application verification and CI live in this repository.
-  - The companion QA repository keeps portfolio E2E automation, exploratory records, and release evidence.
-  - Recommended by Claude; the user said "kreni" without choosing otherwise.
-- **`pnpm check:all` (`scripts/check-all.mjs`):**
-  - `--api`, `--browser`, or both by default; `--skip-build` when the build has already run.
-  - Each API suite gets a fresh database named for its check pattern plus a run id.
-  - Each browser group gets a fresh database, migrated and seeded, and its own QA API on 3013. One web server on 5175 proxies to it.
-  - Suites that change the same seed orders are in separate groups.
-  - Suites run one after another, because concurrency checks must not compete for CPU with other suites.
-  - Databases are created through the configured `DATABASE_URL` server, never on the development database. Names are validated before use.
-  - The script prints each database used. They are kept as evidence, and the script never drops databases.
-  - Screenshots go to one evidence directory (`--evidence`, default under the system temp directory).
-- **Excluded from the runner, with the reason printed:**
-  - `catalog-browser.mjs`: it needs an external Playwright install, which is not a dependency.
-  - `demo-reset-browser.mjs`: it needs the Docker demo stack.
-  - Their API/PostgreSQL counterparts (`catalog`, `demo-reset`) run.
-- **GitHub Actions (`.github/workflows/ci.yml`):**
-  - Triggers: pushes to `main`, pull requests, and manual runs. Read-only permissions; concurrent runs of the same ref are cancelled.
-  - Jobs:
-    - `gates`: install with the frozen lockfile, then typecheck, lint, and build.
-    - `api-checks`: PostgreSQL 18.6 service, all API suites.
-    - `browser-checks`: PostgreSQL service, the installed Chrome, all CDP browser suites.
-  - Node comes from `.nvmrc`; pnpm comes from `packageManager`.
-  - Screenshots are uploaded when the browser job fails.
-  - CI uses CI-only values (`SEED_USER_PASSWORD` and database credentials) that exist only in the disposable service container. There are no repository secrets.
-- **Chrome in CI:** GitHub's Ubuntu runners restrict the Chrome sandbox, so `cdp.mjs` adds `--no-sandbox` only when `CI=true`.
-- **Out of scope:**
-  - a unit-test framework (no dependency added now; pure logic stays covered through the API checks);
-  - porting the Playwright catalog browser check;
-  - running the Docker demo stack in CI;
-  - branch protection rules (GitHub settings, the user's decision).
+- Branch: `feature/auth-hardening`.
+- **Rate limit, per email address:**
+  - At most **5 sign-in attempts per normalized email in a rolling 15-minute window**.
+  - The 6th attempt and later get **429 `TOO_MANY_LOGIN_ATTEMPTS`** with a `Retry-After` header and a message stating how long to wait.
+  - During the lockout **even the correct password is refused**, and the password is not checked at all.
+  - A successful sign-in clears the attempts for that email.
+- **No account enumeration:** unknown emails, inactive users, and inactive organizations are counted and answered exactly like existing accounts.
+- **Storage:**
+  - Attempts are stored in PostgreSQL (`login_attempts`: SHA-256 of the normalized email, and the time). Raw emails and passwords are never stored.
+  - The limit holds across API instances and restarts.
+- **Strict under concurrency:**
+  - Each attempt is recorded first and then counted against the window. An attempt over the limit removes its own record and gets 429.
+  - Parallel attempts can therefore never check more than 5 passwords per window, and no database lock is held during password hashing.
+- **No per-IP limit.** The API has no trusted-proxy configuration, and behind the demo reverse proxy every client would share one address. Revisit this with hosting.
+- **Lockout as a nuisance:** anyone who knows an email can lock that account for up to 15 minutes. This is the accepted tradeoff of a per-account limit, and the lockout is temporary.
+- **Session cleanup:**
+  - The API removes sessions that have been unusable for **more than 24 hours**: expired, idle-expired, or revoked.
+  - Usable sessions and recently revoked ones (kept for diagnostics) stay.
+  - The same run removes attempts older than the rate-limit window.
+  - It runs at startup and then every `SESSION_CLEANUP_INTERVAL_SECONDS` (default 3600). Deletes are idempotent, so several API instances are safe.
+  - A failed run is logged and does not stop the API.
+- **Demo reset** also clears `login_attempts`.
+- **Logging:** a lockout logs a warning with a short hash prefix, never the email. Cleanup logs the counts removed.
+- **UI:** the sign-in page shows the lockout message from the server. No other UI changes.
+- **Out of scope:** CAPTCHA, notifying users about lockouts, per-IP limits, and administrator unlock (the window expires by itself; a demo reset also clears it).
+
+## Data
+
+- `LoginAttempt`: `id`, `keyHash` (64 hex), and `attemptedAt`, with an index on `(keyHash, attemptedAt)`. A new migration sorts after the existing ones.
+- Config: `SESSION_CLEANUP_INTERVAL_SECONDS` is optional, an integer from 1 to 86400, default 3600.
 
 ## Verification
 
-- `pnpm check:all` passes locally from a clean state (API and browser).
-- A deliberately failing suite makes the runner exit non-zero and names the suite.
-- A busy QA port, and invalid or development-database targets, are refused.
-- The workflow runs on GitHub after the branch is pushed, with all three jobs green.
-- `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check` pass.
+- **API/PostgreSQL** (`check:auth`):
+  - 5 wrong passwords, then 429 with `Retry-After`, including for the correct password.
+  - Another account is unaffected.
+  - An unknown email and an inactive user behave identically.
+  - When the window expires (attempts backdated in the database), sign-in works and the attempts are cleared.
+  - A success resets the count.
+  - 10 parallel wrong attempts check at most 5 passwords, and the rest get 429.
+  - No emails or passwords appear in the database or logs.
+- **Cleanup** (API started with a 1-second interval):
+  - Sessions expired, idle, or revoked more than 24 hours ago are deleted.
+  - Usable and recently revoked sessions stay.
+  - Old attempts are deleted.
+- **Demo reset** clears attempts. The existing demo-reset check covers this.
+- **Browser** (new group in `check:all`): repeated wrong passwords show the lockout message, and another account still signs in.
+- `pnpm check:all` passes locally, and CI is green on the pull request. `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check` pass.
 
 ## Implementation results (2026-09-30)
 
-- Evidence and details: [features/ci-verification.md](features/ci-verification.md).
-- `pnpm check:all` passes locally with 11 of 11 suites (7 API, 4 browser groups) in about 55 seconds.
-- The failure paths exit 1: a busy port, a broken Chrome, and no suite selected.
-- The first run exposed a leftover QA web server listening on IPv6 only, which the port check had missed. The check now covers IPv4 and IPv6.
-- On GitHub Actions (run `36763707451`, PR #1), all three jobs pass and all 11 suites pass, in about 1.5 minutes.
+- Evidence and details: [features/auth-hardening-verification.md](features/auth-hardening-verification.md).
+- Full `pnpm check:all`: 13 of 13 pass (8 API suites, 5 browser groups). The new `auth` API check passed 5 of 5 on fresh databases, and the browser check passed 3 of 3.
+- **Corrections found by the checks:**
+  - The first limiter could starve a parallel burst entirely (0 of 12 checked). A per-email advisory lock around "count, then record" now checks exactly 5.
+  - The first browser check froze the page with a self-retriggering `MutationObserver`. That hang led to a per-suite timeout in the runner, which kills hung suites together with their children.
+- The migration was applied to the dev database without a reset, and there is no schema drift.
 
 ## Previous feature
 
-[Isolated demo reset](features/demo-reset.md) is merged as `ada25a1`; [verification](features/demo-reset-verification.md). Earlier: [organization and user administration](features/admin-management.md), [fulfillment](features/fulfillment.md), [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth and sessions](features/auth-sessions.md). Still outstanding: login rate limiting, session cleanup, audit foreign keys, shared UI primitives, and scheduling/hosting for the demo reset.
+[Test and CI setup](features/ci.md) is merged as `d0bb179`; [verification](features/ci-verification.md). Earlier: [demo reset](features/demo-reset.md), [organization and user administration](features/admin-management.md), [fulfillment](features/fulfillment.md), [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth and sessions](features/auth-sessions.md). Still outstanding: audit foreign keys, shared UI primitives, demo hosting and scheduling, and a unit-test framework.
 
 ## History
 

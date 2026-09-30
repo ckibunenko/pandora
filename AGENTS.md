@@ -46,6 +46,7 @@ Focused feature checks exist, each against its own empty QA database (never the 
 - Order processing: `apps/api/checks/order-processing.mjs` (`pnpm --filter @pandora/api check:processing`, built on the shared `apps/api/checks/harness.mjs`) and `apps/web/checks/order-processing-browser.mjs`. See `context/features/order-processing-verification.md`. Browser suites that change the same seed orders need separate fresh databases.
 - Fulfillment: `apps/api/checks/fulfillment.mjs` (`pnpm --filter @pandora/api check:fulfillment`) and `apps/web/checks/fulfillment-browser.mjs`. See `context/features/fulfillment-verification.md`.
 - Organization and user administration: `apps/api/checks/administration.mjs` (`pnpm --filter @pandora/api check:admin`) and `apps/web/checks/admin-browser.mjs`. See `context/features/admin-management-verification.md`.
+- Sign-in rate limiting and session cleanup: `apps/api/checks/auth.mjs` (`pnpm --filter @pandora/api check:auth`) and `apps/web/checks/auth-browser.mjs`. See `context/features/auth-hardening-verification.md`.
 - Browser checks drive local Chrome through `apps/web/checks/cdp.mjs` (DevTools protocol, no extra dependencies).
 
 `pnpm check:all` (`scripts/check-all.mjs`) runs everything above in one go:
@@ -53,6 +54,7 @@ Focused feature checks exist, each against its own empty QA database (never the 
 - Each browser group gets a fresh seeded database, a QA API on 3013, and a shared web server on 5175.
 - Options: `--api`, `--browser`, `--only <name>`, `--skip-build`, `--evidence <dir>`.
 - It refuses to start if 3013 or 5175 is in use.
+- A suite that runs longer than `CHECK_SUITE_TIMEOUT_SECONDS` (default 300) is killed with its child processes and counted as failed.
 - It creates databases on the `DATABASE_URL` server and never drops them.
 - Not run: `catalog-browser.mjs` (external Playwright) and `demo-reset-browser.mjs` (Docker demo stack).
 
@@ -103,6 +105,8 @@ pnpm workspace monorepo following the target in `context/coding-standards.md`:
     - Inside the work: reread state → validate → update → movement → `recordAudit` (`src/common/audit/audit.ts`), all in the same transaction.
     - The work may run more than once, so it must not perform external side effects.
   - Auth (`src/modules/auth/`): global guards run in order session → CSRF → roles. Every route requires a session unless marked `@Public()`; restrict by role with `@Roles(...)`; read the caller with `@CurrentAuth()`. Unsafe methods need the `X-CSRF-Token` header from the session response.
+    - Sign-in is limited to 5 attempts per normalized email per 15 minutes (`LoginRateLimiter`), with 429 `TOO_MANY_LOGIN_ATTEMPTS` and `Retry-After`. Unknown emails are handled identically. Attempts are stored only as SHA-256 digests in `login_attempts`, and a per-email advisory lock covers only the count-and-record step.
+    - `SessionCleanupService` removes sessions that have been unusable for more than 24 hours, and attempts older than the window. It runs at startup and every `SESSION_CLEANUP_INTERVAL_SECONDS` (optional, default 3600).
 - `packages/contracts` — Zod schemas and types shared by web and API. Build it before typechecking dependents (root scripts do this).
 - `prisma/` — schema and migrations. The Prisma 7 client is generated into `apps/api/src/generated/prisma` (gitignored) by `prisma generate`, which the API's `dev`/`build`/`typecheck` scripts run automatically.
 - `docker-compose.yml` — local PostgreSQL only.

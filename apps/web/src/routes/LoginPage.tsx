@@ -34,6 +34,9 @@ function formError(error: unknown): string | undefined {
     if (error.code === ERROR_CODES.validationFailed) {
       return "Please correct the highlighted fields.";
     }
+    if (error.code === ERROR_CODES.tooManyLoginAttempts) {
+      return error.message;
+    }
     const reference = error.correlationId ? ` Reference: ${error.correlationId}` : "";
     return `Sign-in failed. Please try again.${reference}`;
   }

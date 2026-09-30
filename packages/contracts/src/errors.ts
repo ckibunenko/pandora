@@ -6,6 +6,7 @@ export const ERROR_CODES = {
   validationFailed: "VALIDATION_FAILED",
   unauthenticated: "UNAUTHENTICATED",
   invalidCredentials: "INVALID_CREDENTIALS",
+  tooManyLoginAttempts: "TOO_MANY_LOGIN_ATTEMPTS",
   forbidden: "FORBIDDEN",
   csrfTokenInvalid: "CSRF_TOKEN_INVALID",
   notFound: "NOT_FOUND",

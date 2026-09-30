@@ -76,6 +76,16 @@ model Session {
   @@map("sessions")
 }
 
+/// One sign-in attempt per row, keyed by a SHA-256 hash of the normalized email; never the email itself.
+model LoginAttempt {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  keyHash     String   @map("key_hash") @db.Char(64)
+  attemptedAt DateTime @map("attempted_at") @db.Timestamptz(3)
+
+  @@index([keyHash, attemptedAt])
+  @@map("login_attempts")
+}
+
 enum ProductType {
   BASE_GAME
   EXPANSION

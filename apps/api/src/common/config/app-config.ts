@@ -11,6 +11,8 @@ const envSchema = z.object({
   DATABASE_URL: databaseUrlSchema,
   API_PORT: z.coerce.number().int().min(1).max(65535),
   SESSION_COOKIE_SECURE: booleanFlagSchema,
+  /** Optional; checks lower it to observe cleanup without waiting an hour. */
+  SESSION_CLEANUP_INTERVAL_SECONDS: z.coerce.number().int().min(1).max(86_400).default(3600),
 });
 
 export interface AppConfig {
@@ -19,6 +21,7 @@ export interface AppConfig {
   readonly databaseUrl: string;
   readonly port: number;
   readonly sessionCookieSecure: boolean;
+  readonly sessionCleanupIntervalSeconds: number;
 }
 
 export class InvalidConfigError extends Error {
@@ -45,5 +48,6 @@ export function loadAppConfig(env: NodeJS.ProcessEnv): AppConfig {
     databaseUrl: parsed.DATABASE_URL,
     port: parsed.API_PORT,
     sessionCookieSecure: parsed.SESSION_COOKIE_SECURE,
+    sessionCleanupIntervalSeconds: parsed.SESSION_CLEANUP_INTERVAL_SECONDS,
   };
 }

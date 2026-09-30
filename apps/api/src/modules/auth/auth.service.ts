@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import type { SessionUser } from "@pandora/contracts";
 import { ApiException } from "../../common/errors/api-exception.js";
 import { PrismaService } from "../../infrastructure/prisma/prisma.service.js";
+import { LoginRateLimiter } from "./login-rate-limiter.js";
 import { PasswordHasher } from "./password-hasher.js";
 import { SessionsService, type CreatedSession } from "./sessions.service.js";
 import { toSessionUser } from "./session-user.mapper.js";
@@ -16,9 +17,12 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly passwords: PasswordHasher,
     private readonly sessions: SessionsService,
+    private readonly limiter: LoginRateLimiter,
   ) {}
 
   async login(email: string, password: string): Promise<LoginResult> {
+    // Checked before the account lookup, so known and unknown emails are limited identically.
+    const attemptKey = await this.limiter.begin(email);
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
       select: {
@@ -42,6 +46,7 @@ export class AuthService {
       throw ApiException.invalidCredentials();
     }
 
+    await this.limiter.succeeded(attemptKey);
     const session = await this.sessions.create(user.id);
     return { ...session, user: toSessionUser(user) };
   }

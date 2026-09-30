@@ -24,15 +24,15 @@ export async function restoreDemoData(prisma: PrismaClient, databaseName: string
       cancellation_request_items, cancellation_requests, shipment_items, shipments,
       stock_reservations, order_lines, orders, idempotency_records,
       inventory_movements, inventory_items, audit_events, product_variants, products,
-      sessions, users, organizations RESTART IDENTITY`;
+      sessions, login_attempts, users, organizations RESTART IDENTITY`;
     await tx.$executeRaw`ALTER SEQUENCE orders_number_seq RESTART WITH 1001`;
     await tx.$executeRaw`ALTER SEQUENCE shipments_number_seq RESTART WITH 1001`;
     const seeded = await seedData(tx, passwordHash);
     const counts = await Promise.all([
       tx.organization.count(), tx.user.count(), tx.product.count(), tx.productVariant.count(),
-      tx.order.count(), tx.session.count(), tx.idempotencyRecord.count(),
+      tx.order.count(), tx.session.count(), tx.idempotencyRecord.count(), tx.loginAttempt.count(),
     ]);
-    if (seeded.orders !== 9 || counts.join(",") !== "4,6,8,11,9,0,0") {
+    if (seeded.orders !== 9 || counts.join(",") !== "4,6,8,11,9,0,0,0") {
       throw new Error("Demo seed verification failed.");
     }
     // Force all deferred inventory/order/admin constraints before returning success.

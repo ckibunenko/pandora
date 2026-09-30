@@ -19,6 +19,7 @@
     "check:processing": "node --env-file-if-exists=../../.env checks/order-processing.mjs",
     "check:fulfillment": "node --env-file-if-exists=../../.env checks/fulfillment.mjs",
     "check:admin": "node --env-file-if-exists=../../.env checks/administration.mjs",
+    "check:auth": "node --env-file-if-exists=../../.env checks/auth.mjs",
     "check:demo-reset": "node --env-file-if-exists=../../.env checks/demo-reset.mjs"
   },
   "dependencies": {

@@ -36,6 +36,7 @@ const API_SUITES = [
   { name: "fulfillment", script: "check:fulfillment", databaseEnv: "FULFILLMENT_CHECK_DATABASE", prefix: "pandora_fulfillment_check" },
   { name: "admin", script: "check:admin", databaseEnv: "ADMIN_CHECK_DATABASE", prefix: "pandora_admin_check" },
   { name: "demo-reset", script: "check:demo-reset", databaseEnv: "DEMO_CHECK_DATABASE", prefix: "pandora_demo_check" },
+  { name: "auth", script: "check:auth", databaseEnv: "AUTH_CHECK_DATABASE", prefix: "pandora_auth_check" },
 ];
 // Suites in one group share a seeded database; suites that change the same seed orders are in separate groups.
 const BROWSER_GROUPS = [
@@ -49,6 +50,8 @@ const BROWSER_GROUPS = [
   },
   { name: "orders", suites: [{ file: "orders-browser", evidenceEnv: "ORDERS_CHECK_EVIDENCE" }] },
   { name: "admin", suites: [{ file: "admin-browser", evidenceEnv: "ADMIN_CHECK_EVIDENCE" }] },
+  // Locks a seeded account for 15 minutes, so it gets its own database.
+  { name: "auth", suites: [{ file: "auth-browser", evidenceEnv: "AUTH_CHECK_EVIDENCE" }] },
 ];
 const NOT_RUN = [
   "catalog-browser: needs an external Playwright install (not a project dependency)",
@@ -63,17 +66,45 @@ for (const name of ["DATABASE_URL", "SEED_USER_PASSWORD"]) {
 const serverUrl = new URL(process.env.DATABASE_URL);
 const developmentDatabase = serverUrl.pathname.slice(1);
 
-function run(command, args, { cwd = root, env = {}, quiet = false } = {}) {
+const SUITE_TIMEOUT_MS = Number(process.env.CHECK_SUITE_TIMEOUT_SECONDS ?? 300) * 1000;
+const activeGroups = new Set();
+const killGroup = (pid) => {
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    /* already gone */
+  }
+};
+// Suites run in their own process group (they start Chrome and API servers); stop them all on Ctrl-C.
+process.on("SIGINT", () => {
+  for (const pid of activeGroups) killGroup(pid);
+  process.exit(130);
+});
+
+/** A suite that hangs is killed together with its children after `timeoutMs` and counts as failed. */
+function run(command, args, { cwd = root, env = {}, quiet = false, timeoutMs = SUITE_TIMEOUT_MS } = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: quiet ? "ignore" : "inherit" });
-    child.on("exit", (code) => resolve(code ?? 1));
-    child.on("error", () => resolve(1));
+    const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: quiet ? "ignore" : "inherit", detached: true });
+    activeGroups.add(child.pid);
+    const timer = setTimeout(() => {
+      console.error(`Timed out after ${timeoutMs / 1000}s: ${command} ${args.join(" ")}`);
+      killGroup(child.pid);
+    }, timeoutMs);
+    const finish = (code) => {
+      clearTimeout(timer);
+      activeGroups.delete(child.pid);
+      resolve(code);
+    };
+    child.on("exit", (code) => finish(code ?? 1));
+    child.on("error", () => finish(1));
   });
 }
 
 /** Starts a long-running process in its own process group so that it and its children can be stopped together. */
 function background(command, args, { cwd, env, log }) {
   const child = spawn(command, args, { cwd, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  activeGroups.add(child.pid);
+  child.once("exit", () => activeGroups.delete(child.pid));
   child.stdout.on("data", (data) => log.push(String(data)));
   child.stderr.on("data", (data) => log.push(String(data)));
   return {
@@ -212,7 +243,7 @@ mkdirSync(evidence, { recursive: true });
 let exitCode = 0;
 try {
   // A local .env sets NODE_ENV=development; a build always uses production.
-  if (!options["skip-build"] && (await run("pnpm", ["build"], { env: { NODE_ENV: "production" } })) !== 0) throw new Error("Build failed.");
+  if (!options["skip-build"] && (await run("pnpm", ["build"], { env: { NODE_ENV: "production" }, timeoutMs: 10 * 60 * 1000 })) !== 0) throw new Error("Build failed.");
   if (runApi) await runApiSuites();
   if (runBrowser) await runBrowserGroups();
 } catch (error) {
