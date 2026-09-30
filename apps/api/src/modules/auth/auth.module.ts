@@ -17,5 +17,6 @@ import { SessionsService } from "./sessions.service.js";
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
+  exports: [PasswordHasher],
 })
 export class AuthModule {}

@@ -1,10 +1,28 @@
 import { Injectable } from "@nestjs/common";
 import { Clock } from "../../common/clock/clock.js";
+import type { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../infrastructure/prisma/prisma.service.js";
 import type { AuthContext } from "./auth-context.js";
 import { SESSION_ABSOLUTE_TTL_MS, SESSION_IDLE_TIMEOUT_MS, SESSION_TOUCH_INTERVAL_MS } from "./auth.constants.js";
 import { generateToken, hashToken } from "./session-token.js";
 import { toSessionUser } from "./session-user.mapper.js";
+
+export type SessionRevocationReason = "user_deactivated" | "role_changed" | "password_reset" | "organization_deactivated";
+
+/** Ends every unexpired session that matches `where` inside the caller's transaction; returns how many ended. */
+export async function revokeSessions(
+  tx: Prisma.TransactionClient,
+  clock: Clock,
+  where: Prisma.SessionWhereInput,
+  reason: SessionRevocationReason,
+): Promise<number> {
+  const now = clock.now();
+  const result = await tx.session.updateMany({
+    where: { ...where, revokedAt: null, expiresAt: { gt: now } },
+    data: { revokedAt: now, revokedReason: reason },
+  });
+  return result.count;
+}
 
 export interface CreatedSession {
   readonly token: string;

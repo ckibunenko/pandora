@@ -5,6 +5,7 @@ import type { AppConfig } from "./common/config/app-config.js";
 import { AppConfigModule } from "./common/config/app-config.module.js";
 import { ApiExceptionFilter } from "./common/errors/api-exception.filter.js";
 import { PrismaModule } from "./infrastructure/prisma/prisma.module.js";
+import { AdministrationModule } from "./modules/administration/administration.module.js";
 import { AuthModule } from "./modules/auth/auth.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
@@ -16,7 +17,7 @@ export class AppModule {
   static forRoot(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      imports: [AppConfigModule.forRoot(config), ClockModule, PrismaModule, AuthModule, HealthModule, CatalogModule, InventoryModule, OrdersModule],
+      imports: [AppConfigModule.forRoot(config), ClockModule, PrismaModule, AuthModule, HealthModule, CatalogModule, InventoryModule, OrdersModule, AdministrationModule],
       providers: [{ provide: APP_FILTER, useClass: ApiExceptionFilter }],
     };
   }

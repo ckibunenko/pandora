@@ -81,6 +81,26 @@ export class ApiException extends HttpException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationConflict, "The order changed since the cancellation was requested.", details);
   }
 
+  static organizationNameExists(): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.organizationNameExists, "An organization with this name already exists.", [
+      { field: "name", message: "Choose a unique organization name." },
+    ]);
+  }
+
+  static emailAlreadyExists(): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.emailAlreadyExists, "A user with this email already exists.", [
+      { field: "email", message: "Choose an email that is not in use." },
+    ]);
+  }
+
+  static distributorOrganizationProtected(): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.distributorOrganizationProtected, "The distributor organization cannot be deactivated.");
+  }
+
+  static lastActiveAdministrator(): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.lastActiveAdministrator, "The last active administrator cannot be deactivated or lose the administrator role.");
+  }
+
   static concurrentModification(): ApiException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.concurrentModification, "The record changed concurrently. Please retry.");
   }

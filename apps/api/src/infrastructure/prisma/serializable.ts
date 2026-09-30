@@ -4,9 +4,20 @@ import type { PrismaService } from "./prisma.service.js";
 
 export const MAX_SERIALIZABLE_ATTEMPTS = 3;
 
-// The pg adapter maps SQLSTATE 40001 (serialization failure) and 40P01 (deadlock) to P2034.
+// The pg adapter maps SQLSTATE 40001 (serialization failure) and 40P01 (deadlock) to P2034 for statements.
+// A conflict that PostgreSQL only detects at COMMIT surfaces as the adapter's raw error instead.
 function isRetryableConflict(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === "P2034";
+  }
+  return (
+    error instanceof Error &&
+    error.name === "DriverAdapterError" &&
+    typeof error.cause === "object" &&
+    error.cause !== null &&
+    "kind" in error.cause &&
+    error.cause.kind === "TransactionWriteConflict"
+  );
 }
 
 /**

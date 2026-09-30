@@ -1,0 +1,59 @@
+/* Status is always written out; color only reinforces it. */
+.status {
+  display: inline-block;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status[data-active="true"] {
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.status[data-active="false"] {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.readOnly {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.readOnly dt {
+  color: var(--color-text-muted);
+}
+
+.readOnly dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.readOnlyNote {
+  margin: var(--space-3) 0 var(--space-8);
+}
+
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-primary);
+  background: var(--color-surface);
+  font-size: 0.875rem;
+}
+
+.members {
+  margin-top: var(--space-8);
+}

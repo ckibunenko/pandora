@@ -1,7 +1,7 @@
 # Pandora — Project Overview
 
-> **Revision:** 2026-09-29  
-> **Status:** MVP in progress; authentication and catalog implemented
+> **Revision:** 2026-09-30
+> **Status:** Phase 1 core ordering and fulfillment implemented; organization/user administration verified on its feature branch, ready for merge; demo reset automation remains planned
 > **Purpose:** Persistent product context for contributors and coding agents
 
 Pandora is a B2B order and inventory management sandbox for a fictional board-game distributor serving retail stores. It showcases Aleksandar Parabucki's Senior QA skills through a working application, explicit business rules, automated testing, reproducible defects, and evidence-based quality ownership.
@@ -20,7 +20,7 @@ This overview defines the product baseline, target boundaries, and cross-cutting
 
 ## 2. Current implementation versus target architecture
 
-**Observed repository baseline on 2026-09-30:** the original Next.js starter has been replaced by the target stack as a pnpm workspace skeleton: `apps/web` (React/Vite), `apps/api` (NestJS), `packages/contracts`, `prisma/`, and Docker Compose with PostgreSQL. It contains health checks and authentication (organizations, users, server-side sessions, role and CSRF guards, seeded demo accounts); catalog browsing and administrator management with language/edition variants, EUR prices, and essential transactional audit are implemented. Inventory is implemented: stock per SKU, receipts and adjustments with movements and audit, `Idempotency-Key` handling, and Serializable transactions with bounded retry. `reserved` stays 0 until order confirmation exists. Order drafts, submission with price review and frozen snapshots, and retailer cancellation are implemented. Staff confirmation with all-or-nothing stock reservation and rejection with a reason are implemented. Fulfillment is implemented: shipments consume reservations, retailers request cancellation of all remaining quantities and staff approve or reject, and the status is derived from the quantities. Line-level cancellation requests (Phase 2) and returns remain planned. `AGENTS.md` describes the current commands and layout.
+**Observed repository baseline on 2026-09-30:** the original Next.js starter has been replaced by the target stack as a pnpm workspace skeleton: `apps/web` (React/Vite), `apps/api` (NestJS), `packages/contracts`, `prisma/`, and Docker Compose with PostgreSQL. It contains health checks and authentication (organizations, users, server-side sessions, role and CSRF guards, seeded demo accounts); catalog browsing and administrator management with language/edition variants, EUR prices, and essential transactional audit are implemented. Inventory is implemented: stock per SKU, receipts and adjustments with movements and audit, `Idempotency-Key` handling, and Serializable transactions with bounded retry. `reserved` tracks outstanding stock reservations created at order confirmation. Order drafts, submission with price review and frozen snapshots, and retailer cancellation are implemented. Staff confirmation with all-or-nothing stock reservation and rejection with a reason are implemented. Fulfillment is implemented: shipments consume reservations, retailers request cancellation of all remaining quantities and staff approve or reject, and the status is derived from the quantities. Minimal organization and user administration is implemented: retailer organizations, accounts, staff roles, deactivation, and password resets with immediate session revocation, plus protection of the distributor and the last administrator. Line-level cancellation requests (Phase 2), returns, and demo reset automation remain planned. `AGENTS.md` describes the current commands and layout.
 
 **Target design inherited from the planning documents:** React/Vite frontend, NestJS backend, PostgreSQL, and Prisma. The skeleton follows this design; the parts listed below that are not yet built remain planned, not implemented.
 
@@ -55,7 +55,7 @@ flowchart TB
     Worker -.-> Logs
 ```
 
-The backend modules share one database. A business mutation and its audit, stock movements, and applicable outbox job commit together; notification delivery happens afterward. This diagram represents the target design; sessions and catalog are implemented; the worker, Mailpit, inventory, and order workflows remain planned.
+The backend modules share one database. Business mutations, their audit records, and applicable stock movements commit together. The diagram also includes the planned notification outbox and worker: outbox jobs will commit with the originating mutation and delivery will happen afterward. Sessions, catalog, inventory, ordering, fulfillment, and organization/user administration are implemented; the outbox, worker, and Mailpit remain planned.
 
 Keep `AGENTS.md`, commands, and implementation documentation in sync as the architecture grows. Use actual repository scripts for existing code.
 
@@ -261,4 +261,4 @@ Keep this overview stable and concise. Put detailed data modeling in a separate 
 
 The `context/` directory contains this overview, `coding-standards.md`, `ai-interaction.md`, and `current-feature.md`, all referenced from `AGENTS.md`. The previously mentioned phase specifications do not exist yet; do not treat them as available context.
 
-Catalog defaults are now EUR, eight fictional products, and eleven variants; see `current-feature.md`. Remaining decisions: expand lifecycle seed fixtures; define detailed endpoint/data contracts and operational diagnostic permissions; settle test/CI ownership; select hosting, scheduler, resource limits/costs, public URL, and HTTPS configuration. These decisions must preserve the confirmed fictional domain, QA purpose, and prohibition on AI features and mandatory paid integrations.
+Catalog defaults are now EUR, eight fictional products, and eleven variants; see [features/catalog.md](features/catalog.md). Remaining decisions: expand lifecycle seed fixtures; define detailed endpoint/data contracts for remaining features and operational diagnostic permissions; settle test/CI ownership; select hosting, scheduler, resource limits/costs, public URL, and HTTPS configuration. These decisions must preserve the confirmed fictional domain, QA purpose, and prohibition on AI features and mandatory paid integrations.

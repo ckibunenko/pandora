@@ -17,7 +17,8 @@
     "check:inventory": "node --env-file-if-exists=../../.env checks/inventory.mjs",
     "check:orders": "node --env-file-if-exists=../../.env checks/orders.mjs",
     "check:processing": "node --env-file-if-exists=../../.env checks/order-processing.mjs",
-    "check:fulfillment": "node --env-file-if-exists=../../.env checks/fulfillment.mjs"
+    "check:fulfillment": "node --env-file-if-exists=../../.env checks/fulfillment.mjs",
+    "check:admin": "node --env-file-if-exists=../../.env checks/administration.mjs"
   },
   "dependencies": {
     "@nestjs/common": "12.1.1",

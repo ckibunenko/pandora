@@ -22,6 +22,10 @@ export const ERROR_CODES = {
   shipmentQuantityExceeded: "SHIPMENT_QUANTITY_EXCEEDED",
   cancellationRequestPending: "CANCELLATION_REQUEST_PENDING",
   cancellationConflict: "CANCELLATION_CONFLICT",
+  organizationNameExists: "ORGANIZATION_NAME_EXISTS",
+  emailAlreadyExists: "EMAIL_ALREADY_EXISTS",
+  distributorOrganizationProtected: "DISTRIBUTOR_ORGANIZATION_PROTECTED",
+  lastActiveAdministrator: "LAST_ACTIVE_ADMINISTRATOR",
 } as const;
 
 export const errorDetailSchema = z.object({

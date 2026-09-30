@@ -45,6 +45,16 @@ export function CatalogLayout() {
               Inventory
             </NavLink>
           )}
+          {user.role === "administrator" && (
+            <>
+              <NavLink to="/admin/organizations" data-test="organizations-nav">
+                Organizations
+              </NavLink>
+              <NavLink to="/admin/users" data-test="users-nav">
+                Users
+              </NavLink>
+            </>
+          )}
         </nav>
         <div className={styles.account}>
           <span data-test="current-user">

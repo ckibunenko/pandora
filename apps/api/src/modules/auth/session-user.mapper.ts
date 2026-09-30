@@ -9,7 +9,7 @@ interface UserWithOrganization {
   organization: { id: string; name: string; type: DbOrganizationType };
 }
 
-function toUserRole(role: DbUserRole): UserRole {
+export function toUserRole(role: DbUserRole): UserRole {
   switch (role) {
     case "RETAILER":
       return "retailer";
@@ -20,7 +20,18 @@ function toUserRole(role: DbUserRole): UserRole {
   }
 }
 
-function toOrganizationType(type: DbOrganizationType): OrganizationType {
+export function fromUserRole(role: UserRole): DbUserRole {
+  switch (role) {
+    case "retailer":
+      return "RETAILER";
+    case "operator":
+      return "OPERATOR";
+    case "administrator":
+      return "ADMINISTRATOR";
+  }
+}
+
+export function toOrganizationType(type: DbOrganizationType): OrganizationType {
   switch (type) {
     case "DISTRIBUTOR":
       return "distributor";

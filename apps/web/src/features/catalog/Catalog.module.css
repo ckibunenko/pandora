@@ -496,7 +496,8 @@
     font-size: 1.7rem;
   }
   .nav {
-    gap: var(--space-4);
+    flex-wrap: wrap;
+    gap: 0 var(--space-4);
     font-size: 0.85rem;
   }
   .page {
