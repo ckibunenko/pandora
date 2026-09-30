@@ -53,12 +53,18 @@
   - `--only nonexistent` → nothing selected.
 - **Database-name validation** was reviewed in code only. With generated run ids it cannot be reached from the CLI.
 - **Final gates:** `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check` pass.
-- **GitHub Actions:** not yet run. The workflow runs once the branch is pushed. This file is updated with the result.
+- **GitHub Actions:** run `36763707451` on PR #1 (`feature/ci` → `main`) passed all three jobs in about 1.5 minutes.
+  - Typecheck, lint, and build: 39 s.
+  - API checks: 57 s; all 7 suites passed.
+  - Browser checks: 96 s; all 4 groups passed.
+  - The two excluded suites were reported as SKIP.
+  - Annotations only: `pnpm/action-setup@v4` targets the deprecated Node 20 runtime and is forced onto Node 24. `ubuntu-latest` moves to Ubuntu 26 from 2026-10-19.
 
 ## Limitations and follow-ups
 
 - The runner uses fixed ports 3013 and 5175, so there is one run at a time per machine.
 - Databases accumulate locally, because the runner never drops them. Clean them up by hand when needed.
+- Update `pnpm/action-setup` when a Node 24 release is available, and recheck the jobs after the Ubuntu 26 runner migration.
 - Enabling branch protection on `main` so that CI must pass before merging is a GitHub setting and the user's decision.
 - Still open:
   - the Playwright catalog browser check and the demo-reset browser check in CI;

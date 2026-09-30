@@ -4,7 +4,7 @@ Test and CI setup. One command runs every application check on fresh, disposable
 
 ## Status
 
-Implemented and verified locally on `feature/ci`. The GitHub Actions run is pending: it starts once the branch is pushed, and pushing needs approval.
+Completed — merged to `main` as `d0bb179` (2026-09-30) through PR #1; the GitHub Actions run passed.
 
 ## Goal
 
@@ -60,7 +60,7 @@ A regression cannot reach `main` unnoticed: gates, API/PostgreSQL checks, and br
 - `pnpm check:all` passes locally with 11 of 11 suites (7 API, 4 browser groups) in about 55 seconds.
 - The failure paths exit 1: a busy port, a broken Chrome, and no suite selected.
 - The first run exposed a leftover QA web server listening on IPv6 only, which the port check had missed. The check now covers IPv4 and IPv6.
-- The GitHub Actions workflow is written but has not run yet.
+- On GitHub Actions (run `36763707451`, PR #1), all three jobs pass and all 11 suites pass, in about 1.5 minutes.
 
 ## Previous feature
 
@@ -80,3 +80,4 @@ A regression cannot reach `main` unnoticed: gates, API/PostgreSQL checks, and br
 - Fulfillment (2026-09-30): immutable shipments that consume reservations and stock, retailer cancellation requests for all remaining quantities with staff approval (releasing reservations) or rejection, the order status derived from quantities and verified by the database, and seed orders for these states. 11 API/PostgreSQL groups (three fresh databases), updated processing, orders, inventory, and catalog regressions, and fulfillment 8 / processing 7 / inventory 9 / order drafts 11 browser groups passed; see [features/fulfillment-verification.md](features/fulfillment-verification.md). Merged to `main` as `e7cf5af`.
 - Organization and user administration (2026-09-30): administrator-only organization and account management, immediate session revocation, and distributor/last-administrator protection; fixed retry of commit-time serialization conflicts. API checks 12/12 and typecheck/lint/build passed again before the approved commit on `feature/admin-management`. Earlier browser checks passed 9/9; see [verification](features/admin-management-verification.md). Merged to `main` as `17d5ef5` before starting demo reset automation.
 - Isolated demo reset (2026-09-30): dedicated Compose stack, persistent maintenance, stopped API writers, atomic fixture/session/idempotency restoration, readiness-gated reopening, and fail-closed recovery. Verified with 6 database and 5 lifecycle/browser groups plus administration/fulfillment regressions; demo reset 6/6 and administration 12/12 rerun on fresh databases before merge. Merged to `main` as `ada25a1`.
+- Test and CI setup (2026-09-30): `pnpm check:all` runs every API/PostgreSQL suite and every CDP browser group on fresh, disposable QA databases. GitHub Actions runs typecheck/lint/build, API checks, and browser checks on pushes to `main` and pull requests. Application checks and CI live in this repository. Locally 11/11 suites passed in about 55 s; on GitHub Actions run `36763707451` (PR #1) all 3 jobs and 11 suites passed; see [features/ci-verification.md](features/ci-verification.md). Merged to `main` as `d0bb179`.
