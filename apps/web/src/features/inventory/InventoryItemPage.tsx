@@ -13,6 +13,7 @@ const MOVEMENT_LABELS: Record<InventoryMovement["type"], string> = {
   opening_balance: "Opening balance",
   receipt: "Receipt",
   adjustment: "Adjustment",
+  reservation: "Reservation",
 };
 
 const signed = (value: number) => (value > 0 ? `+${value}` : String(value));

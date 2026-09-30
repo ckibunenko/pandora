@@ -15,7 +15,8 @@
     "db:seed": "prisma generate && nest build && node --env-file-if-exists=../../.env dist/seed/seed.js",
     "check:catalog": "node --env-file-if-exists=../../.env checks/catalog.mjs",
     "check:inventory": "node --env-file-if-exists=../../.env checks/inventory.mjs",
-    "check:orders": "node --env-file-if-exists=../../.env checks/orders.mjs"
+    "check:orders": "node --env-file-if-exists=../../.env checks/orders.mjs",
+    "check:processing": "node --env-file-if-exists=../../.env checks/order-processing.mjs"
   },
   "dependencies": {
     "@nestjs/common": "12.1.1",

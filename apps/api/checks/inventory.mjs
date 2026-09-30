@@ -94,10 +94,14 @@ async function sumsMatch() {
   const rows = await db.$queryRaw`
     SELECT i.variant_id,
       i.sellable = COALESCE(SUM(m.delta) FILTER (WHERE m.bucket = 'SELLABLE'), 0) AS sellable_ok,
-      i.damaged = COALESCE(SUM(m.delta) FILTER (WHERE m.bucket = 'DAMAGED'), 0) AS damaged_ok
+      i.damaged = COALESCE(SUM(m.delta) FILTER (WHERE m.bucket = 'DAMAGED'), 0) AS damaged_ok,
+      i.reserved = COALESCE(SUM(m.delta) FILTER (WHERE m.bucket = 'RESERVED'), 0) AS reserved_ok
     FROM inventory_items i LEFT JOIN inventory_movements m ON m.variant_id = i.variant_id
-    GROUP BY i.variant_id, i.sellable, i.damaged`;
-  assert.ok(rows.length > 0 && rows.every((row) => row.sellable_ok && row.damaged_ok), "movement sums must equal quantities");
+    GROUP BY i.variant_id, i.sellable, i.damaged, i.reserved`;
+  assert.ok(
+    rows.length > 0 && rows.every((row) => row.sellable_ok && row.damaged_ok && row.reserved_ok),
+    "movement sums must equal quantities",
+  );
 }
 
 try {
@@ -117,12 +121,13 @@ try {
 
   await check("seed: one item per variant, opening balances, sums, no audit; reseed changes nothing", async () => {
     assert.equal(await db.inventoryItem.count(), await db.productVariant.count());
-    assert.deepEqual(await counts(), { movements: 11, audits: 0, records: 0 });
+    // 11 opening balances plus the reservation of the seeded confirmed order PO-000006.
+    assert.deepEqual(await counts(), { movements: 12, audits: 0, records: 0 });
     assert.deepEqual(await itemBySku("SWA-EN-STD"), { ...(await itemBySku("SWA-EN-STD")), sellable: 18, damaged: 2, reserved: 0 });
     assert.equal((await itemBySku("CWO-EN-DLX")).sellable, 0);
     await sumsMatch();
     execFileSync(process.execPath, ["dist/seed/seed.js"], { env, stdio: "pipe" });
-    assert.deepEqual(await counts(), { movements: 11, audits: 0, records: 0 });
+    assert.deepEqual(await counts(), { movements: 12, audits: 0, records: 0 });
   });
 
   await check("access: 401 without session, 403 for retailers, 403 without CSRF, no side effects", async () => {

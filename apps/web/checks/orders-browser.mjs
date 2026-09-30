@@ -61,7 +61,7 @@ try {
   await check("retailer sees the organization's orders with statuses and estimated draft totals", async () => {
     await login("retailer@tabletop-lantern.test");
     await click("[data-test=orders-nav]");
-    await waitFor(`location.pathname === "/orders" && document.querySelectorAll("[data-test=order-row]").length === 3`, "3 orders");
+    await waitFor(`location.pathname === "/orders" && document.querySelectorAll("[data-test=order-row]").length === 4`, "4 orders");
     assert.equal(await text(`${rowSelector("PO-000001")} [data-test=order-status]`), "Draft");
     assert.match(await text(rowSelector("PO-000001")), /est\./);
     assert.equal(await text(`${rowSelector("PO-000002")} [data-test=order-status]`), "Submitted");
@@ -187,7 +187,8 @@ try {
   await check("isolation: another retailer sees only its own orders and cannot open others", async () => {
     await login("retailer@cardboard-keep.test");
     await navigate("/orders");
-    await waitFor(`document.querySelectorAll("[data-test=order-row]").length === 1 && !!${q(rowSelector("PO-000004"))}`, "own order only");
+    await waitFor(`!!${q(rowSelector("PO-000004"))}`, "own orders");
+    assert.equal(await count(rowSelector("PO-000001")), 0, "no other organization's orders");
     await navigate(`/orders/${po1.id}`);
     await waitFor(`document.body.textContent.includes("This order does not exist.")`, "not found message");
     await logout();

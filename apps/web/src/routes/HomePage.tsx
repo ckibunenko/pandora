@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate } from "react-router";
 import { roleLabel, useSession } from "../features/auth/session";
 import { logout } from "../lib/api-client";
+import { PROCESSING_QUEUE } from "../features/catalog/CatalogLayout";
 import styles from "./HomePage.module.css";
 
 export function HomePage() {
@@ -25,6 +26,8 @@ export function HomePage() {
   const { user } = session.data;
   if (user.role === "retailer") return <Navigate to="/catalog" replace />;
   if (user.role === "administrator") return <Navigate to="/admin/catalog" replace />;
+  // Operators start from the queue of orders awaiting processing (overview §8).
+  if (user.role === "operator") return <Navigate to={PROCESSING_QUEUE} replace />;
 
   return (
     <main className={styles.page}>

@@ -40,11 +40,11 @@ export function OrdersPage() {
       <div className={catalogStyles.heading}>
         <div>
           <p className={catalogStyles.eyebrow}>{canEdit ? session.data?.user.organization.name.toUpperCase() : "ALL RETAILERS"}</p>
-          <h1>Orders</h1>
+          <h1>{!canEdit && params.get("status") === "submitted" ? "Orders awaiting processing" : "Orders"}</h1>
           <p className={catalogStyles.muted}>
             {canEdit
               ? "Drafts are shared with everyone in your organization. Submitting sends an order for review; it does not reserve stock."
-              : "Orders from every retailer organization."}
+              : "Confirm submitted orders to reserve stock, or reject them with a reason."}
           </p>
         </div>
         {canEdit && (
@@ -71,7 +71,16 @@ export function OrdersPage() {
             <option value="">All statuses</option>
             <option value="draft">Draft</option>
             <option value="submitted">Submitted</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="rejected">Rejected</option>
             <option value="cancelled">Cancelled</option>
+          </select>
+        </label>
+        <label>
+          Order
+          <select value={params.get("sort") ?? "created_desc"} onChange={(event) => change("sort", event.target.value)} data-test="orders-sort">
+            <option value="created_desc">Newest first</option>
+            <option value="submitted_asc">Oldest submission first</option>
           </select>
         </label>
       </div>
@@ -92,8 +101,14 @@ export function OrdersPage() {
           </p>
           {!orders.data.items.length ? (
             <div className={catalogStyles.empty}>
-              <h2>No orders yet</h2>
-              <p>{canEdit ? "Create a draft or add items from the catalog." : "No retailer has created an order."}</p>
+              <h2>{params.get("status") ? "No orders with this status" : "No orders yet"}</h2>
+              <p>
+                {params.get("status") === "submitted" && !canEdit
+                  ? "Nothing is waiting for a decision."
+                  : canEdit
+                    ? "Create a draft or add items from the catalog."
+                    : "No retailer has created an order."}
+              </p>
             </div>
           ) : (
             <div className={catalogStyles.tableScroll}>

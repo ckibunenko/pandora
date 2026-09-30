@@ -4,6 +4,8 @@ import { roleLabel, useSession } from "../auth/session";
 import { logout } from "../../lib/api-client";
 import styles from "./Catalog.module.css";
 
+export const PROCESSING_QUEUE = "/orders?status=submitted&sort=submitted_asc";
+
 export function CatalogLayout() {
   const session = useSession();
   const client = useQueryClient();
@@ -32,17 +34,17 @@ export function CatalogLayout() {
               Manage catalog
             </NavLink>
           )}
-          {user.role === "retailer" && (
-            <NavLink to="/orders" data-test="orders-nav">
-              Orders
-            </NavLink>
-          )}
+          <NavLink
+            to={user.role === "retailer" ? "/orders" : PROCESSING_QUEUE}
+            data-test="orders-nav"
+          >
+            Orders
+          </NavLink>
           {(user.role === "operator" || user.role === "administrator") && (
             <NavLink to="/inventory" data-test="inventory-nav">
               Inventory
             </NavLink>
           )}
-          {user.role === "operator" && <NavLink to="/">Home</NavLink>}
         </nav>
         <div className={styles.account}>
           <span data-test="current-user">

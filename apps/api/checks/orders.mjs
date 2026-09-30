@@ -100,23 +100,31 @@ try {
   await check("seed: four demo orders with correct states; submitted order frozen; reseed creates nothing", async () => {
     assert.deepEqual(
       (await db.order.findMany({ orderBy: { number: "asc" }, select: { number: true, status: true } })).map((o) => `${o.number}:${o.status}`),
-      ["PO-000001:DRAFT", "PO-000002:SUBMITTED", "PO-000003:CANCELLED", "PO-000004:DRAFT"],
+      [
+        "PO-000001:DRAFT",
+        "PO-000002:SUBMITTED",
+        "PO-000003:CANCELLED",
+        "PO-000004:DRAFT",
+        "PO-000005:SUBMITTED",
+        "PO-000006:CONFIRMED",
+        "PO-000007:REJECTED",
+      ],
     );
     assert.equal(po2.totalMinor, 10500n);
     assert.ok(po2.lines.every((line) => line.sku !== null && line.lineTotalMinor === BigInt(line.unitPriceMinor) * BigInt(line.quantity)));
     assert.ok(po1.lines.every((line) => line.sku === null));
     execFileSync(process.execPath, ["dist/seed/seed.js"], { env, stdio: "pipe" });
-    assert.equal(await db.order.count(), 4);
+    assert.equal(await db.order.count(), 7);
     assert.equal(await db.auditEvent.count(), 0);
   });
 
   await check("isolation: retailers see only their organization (404 elsewhere); staff read all but cannot mutate", async () => {
     const own = await call("/orders", { actor: lantern });
     orderListResponseSchema.parse(own.body);
-    assert.deepEqual(own.body.items.map((o) => o.number), ["PO-000003", "PO-000002", "PO-000001"]);
-    assert.deepEqual((await call("/orders", { actor: keep })).body.items.map((o) => o.number), ["PO-000004"]);
-    assert.equal((await call("/orders", { actor: operator })).body.total, 4);
-    assert.equal((await call("/orders", { actor: admin })).body.total, 4);
+    assert.deepEqual(own.body.items.map((o) => o.number), ["PO-000006", "PO-000003", "PO-000002", "PO-000001"]);
+    assert.deepEqual((await call("/orders", { actor: keep })).body.items.map((o) => o.number), ["PO-000007", "PO-000005", "PO-000004"]);
+    assert.equal((await call("/orders", { actor: operator })).body.total, 7);
+    assert.equal((await call("/orders", { actor: admin })).body.total, 7);
     assert.equal((await call(`/orders/${po1.id}`, { actor: operator })).status, 200);
     assertError(await call(`/orders/${po1.id}`, { actor: keep }), 404, "NOT_FOUND");
     assertError(await call(`/orders/${po1.id}/lines`, { actor: keep, method: "PUT", body: { version: 1, lines: [] } }), 404, "NOT_FOUND");
@@ -141,7 +149,7 @@ try {
     const replay = await call("/orders", { actor: lantern, method: "POST", body, key });
     assert.equal(replay.status, 201);
     assert.equal(replay.body.id, first.body.id);
-    assert.equal(await db.order.count(), 5);
+    assert.equal(await db.order.count(), 8);
     assertError(await call("/orders", { actor: lantern, method: "POST", body: { lines: [] }, key }), 409, "IDEMPOTENCY_KEY_REUSED");
     const empty = await call("/orders", { actor: lantern, method: "POST", body: {}, key: randomUUID() });
     assert.deepEqual([empty.status, empty.body.number, empty.body.lines.length], [201, "PO-001002", 0]);
@@ -359,7 +367,7 @@ try {
     assert.deepEqual(created, [...created].sort().reverse());
     const page2 = await call("/orders?page=2&pageSize=20", { actor: operator });
     assert.deepEqual([page2.body.items.length, page2.body.total], [Math.max(0, all.body.total - 20), all.body.total]);
-    for (const query of ["status=confirmed", "pageSize=10", "page=0", "other=1"]) {
+    for (const query of ["status=shipped", "pageSize=10", "page=0", "other=1"]) {
       assertError(await call(`/orders?${query}`, { actor: lantern }), 422, "VALIDATION_FAILED");
     }
     assertError(await call("/orders/not-a-uuid", { actor: lantern }), 422, "VALIDATION_FAILED");

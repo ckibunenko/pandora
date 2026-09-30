@@ -49,6 +49,8 @@ model User {
   createdOrders      Order[]             @relation("OrderCreatedBy")
   submittedOrders    Order[]             @relation("OrderSubmittedBy")
   cancelledOrders    Order[]             @relation("OrderCancelledBy")
+  confirmedOrders    Order[]             @relation("OrderConfirmedBy")
+  rejectedOrders     Order[]             @relation("OrderRejectedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -96,19 +98,20 @@ model Product {
 }
 
 model ProductVariant {
-  id             String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  productId      String         @map("product_id") @db.Uuid
-  product        Product        @relation(fields: [productId], references: [id], onDelete: Restrict)
-  sku            String         @unique @db.VarChar(40)
-  language       String         @db.VarChar(2)
-  edition        String         @db.VarChar(80)
-  unitPriceMinor Int            @map("unit_price_minor")
-  isActive       Boolean        @default(true) @map("is_active")
-  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id             String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  productId      String             @map("product_id") @db.Uuid
+  product        Product            @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sku            String             @unique @db.VarChar(40)
+  language       String             @db.VarChar(2)
+  edition        String             @db.VarChar(80)
+  unitPriceMinor Int                @map("unit_price_minor")
+  isActive       Boolean            @default(true) @map("is_active")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   /// Created by a database trigger for every variant.
   inventory      InventoryItem?
   orderLines     OrderLine[]
+  reservations   StockReservation[]
 
   @@index([productId, sku])
   @@map("product_variants")
@@ -134,11 +137,13 @@ enum MovementType {
   OPENING_BALANCE
   RECEIPT
   ADJUSTMENT
+  RESERVATION
 }
 
 enum StockBucket {
   SELLABLE
   DAMAGED
+  RESERVED
 }
 
 model InventoryItem {
@@ -156,25 +161,28 @@ model InventoryItem {
 
 /// Append-only: a database trigger rejects updates and deletes.
 model InventoryMovement {
-  id             String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  variantId      String        @map("variant_id") @db.Uuid
-  item           InventoryItem @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
+  id             String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  variantId      String            @map("variant_id") @db.Uuid
+  item           InventoryItem     @relation(fields: [variantId], references: [variantId], onDelete: Restrict)
   type           MovementType
   bucket         StockBucket
   delta          Int
-  sellableAfter  Int           @map("sellable_after")
-  reservedAfter  Int           @map("reserved_after")
-  damagedAfter   Int           @map("damaged_after")
-  reference      String?       @db.VarChar(80)
-  note           String?       @db.VarChar(500)
-  reason         String?       @db.VarChar(500)
+  sellableAfter  Int               @map("sellable_after")
+  reservedAfter  Int               @map("reserved_after")
+  damagedAfter   Int               @map("damaged_after")
+  reference      String?           @db.VarChar(80)
+  note           String?           @db.VarChar(500)
+  reason         String?           @db.VarChar(500)
   /// Null only for seed opening balances.
-  actorId        String?       @map("actor_id") @db.Uuid
-  actor          User?         @relation(fields: [actorId], references: [id], onDelete: Restrict)
-  organizationId String?       @map("organization_id") @db.Uuid
-  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  correlationId  String?       @map("correlation_id") @db.VarChar(64)
-  occurredAt     DateTime      @map("occurred_at") @db.Timestamptz(3)
+  actorId        String?           @map("actor_id") @db.Uuid
+  actor          User?             @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  organizationId String?           @map("organization_id") @db.Uuid
+  organization   Organization?     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Set for reservation movements.
+  reservationId  String?           @map("reservation_id") @db.Uuid
+  reservation    StockReservation? @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  correlationId  String?           @map("correlation_id") @db.VarChar(64)
+  occurredAt     DateTime          @map("occurred_at") @db.Timestamptz(3)
 
   @@index([variantId, occurredAt(sort: Desc), id(sort: Desc)])
   @@map("inventory_movements")
@@ -209,6 +217,8 @@ enum OrderStatus {
   DRAFT
   SUBMITTED
   CANCELLED
+  CONFIRMED
+  REJECTED
 }
 
 model Order {
@@ -234,6 +244,13 @@ model Order {
   cancelledBy        User?        @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
   cancelledAt        DateTime?    @map("cancelled_at") @db.Timestamptz(3)
   cancellationReason String?      @map("cancellation_reason") @db.VarChar(500)
+  confirmedById      String?      @map("confirmed_by_id") @db.Uuid
+  confirmedBy        User?        @relation("OrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  confirmedAt        DateTime?    @map("confirmed_at") @db.Timestamptz(3)
+  rejectedById       String?      @map("rejected_by_id") @db.Uuid
+  rejectedBy         User?        @relation("OrderRejectedBy", fields: [rejectedById], references: [id], onDelete: Restrict)
+  rejectedAt         DateTime?    @map("rejected_at") @db.Timestamptz(3)
+  rejectionReason    String?      @map("rejection_reason") @db.VarChar(500)
   lines              OrderLine[]
 
   @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
@@ -243,19 +260,38 @@ model Order {
 
 /// Snapshot columns stay null while the order is a draft and are frozen at submission.
 model OrderLine {
-  id             String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orderId        String         @map("order_id") @db.Uuid
-  order          Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  variantId      String         @map("variant_id") @db.Uuid
-  variant        ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  id             String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderId        String            @map("order_id") @db.Uuid
+  order          Order             @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variantId      String            @map("variant_id") @db.Uuid
+  variant        ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
   quantity       Int
-  sku            String?        @db.VarChar(40)
-  productName    String?        @map("product_name") @db.VarChar(120)
-  language       String?        @db.VarChar(2)
-  edition        String?        @db.VarChar(80)
-  unitPriceMinor Int?           @map("unit_price_minor")
-  lineTotalMinor BigInt?        @map("line_total_minor")
+  sku            String?           @db.VarChar(40)
+  productName    String?           @map("product_name") @db.VarChar(120)
+  language       String?           @db.VarChar(2)
+  edition        String?           @db.VarChar(80)
+  unitPriceMinor Int?              @map("unit_price_minor")
+  lineTotalMinor BigInt?           @map("line_total_minor")
+  /// Created when the order is confirmed.
+  reservation    StockReservation?
 
   @@unique([orderId, variantId])
   @@map("order_lines")
+}
+
+/// Stock held for one confirmed order line. Remaining = reserved − consumed − released.
+model StockReservation {
+  id               String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderLineId      String              @unique @map("order_line_id") @db.Uuid
+  orderLine        OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  variantId        String              @map("variant_id") @db.Uuid
+  variant          ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantityReserved Int                 @map("quantity_reserved")
+  quantityConsumed Int                 @default(0) @map("quantity_consumed")
+  quantityReleased Int                 @default(0) @map("quantity_released")
+  createdAt        DateTime            @map("created_at") @db.Timestamptz(3)
+  movements        InventoryMovement[]
+
+  @@index([variantId])
+  @@map("stock_reservations")
 }

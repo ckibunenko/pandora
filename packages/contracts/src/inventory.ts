@@ -4,8 +4,10 @@ import { pageSchema, pageSizeSchema, paginatedResponseSchema } from "./paginatio
 
 export const MAX_STOCK_CHANGE = 1_000_000;
 
+/** Buckets staff may adjust directly; reserved stock changes only through order workflows. */
 export const stockBucketSchema = z.enum(["sellable", "damaged"]);
-export const movementTypeSchema = z.enum(["opening_balance", "receipt", "adjustment"]);
+export const movementBucketSchema = z.enum(["sellable", "damaged", "reserved"]);
+export const movementTypeSchema = z.enum(["opening_balance", "receipt", "adjustment", "reservation"]);
 
 const optionalText = (max: number) => z.string().trim().min(1).max(max).optional();
 
@@ -57,7 +59,7 @@ export const inventoryMovementSchema = z.object({
   id: z.uuid(),
   variantId: z.uuid(),
   type: movementTypeSchema,
-  bucket: stockBucketSchema,
+  bucket: movementBucketSchema,
   delta: z.number().int(),
   sellableAfter: z.number().int().nonnegative(),
   reservedAfter: z.number().int().nonnegative(),
@@ -78,6 +80,7 @@ export const stockChangeResponseSchema = z.object({
 });
 
 export type StockBucket = z.infer<typeof stockBucketSchema>;
+export type MovementBucket = z.infer<typeof movementBucketSchema>;
 export type MovementType = z.infer<typeof movementTypeSchema>;
 export type ReceiptRequest = z.infer<typeof receiptRequestSchema>;
 export type AdjustmentRequest = z.infer<typeof adjustmentRequestSchema>;

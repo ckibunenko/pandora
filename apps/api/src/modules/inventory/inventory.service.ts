@@ -9,9 +9,9 @@ import {
   type InventoryQuery,
   type MovementListResponse,
   type MovementsQuery,
+  type MovementBucket,
   type MovementType,
   type ReceiptRequest,
-  type StockBucket,
   type StockChangeResponse,
 } from "@pandora/contracts";
 import { recordAudit } from "../../common/audit/audit.js";
@@ -68,8 +68,13 @@ const MOVEMENT_TYPES: Record<MovementRecord["type"], MovementType> = {
   OPENING_BALANCE: "opening_balance",
   RECEIPT: "receipt",
   ADJUSTMENT: "adjustment",
+  RESERVATION: "reservation",
 };
-const BUCKETS: Record<MovementRecord["bucket"], StockBucket> = { SELLABLE: "sellable", DAMAGED: "damaged" };
+const BUCKETS: Record<MovementRecord["bucket"], MovementBucket> = {
+  SELLABLE: "sellable",
+  DAMAGED: "damaged",
+  RESERVED: "reserved",
+};
 
 // Prisma's contains filter uses LIKE patterns; escape them for a literal substring search.
 const literalSearch = (value: string) => value.replace(/[\\%_]/g, (character) => `\\${character}`);

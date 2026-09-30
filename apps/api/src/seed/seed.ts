@@ -69,10 +69,14 @@ async function seed(): Promise<void> {
       }
       return {
         openingMovements: await seedInventory(tx),
-        orders: await seedOrders(tx, {
-          tabletopLantern: { organizationId: TABLETOP_LANTERN_ID, userId: "01920000-0000-7000-8000-000000000201" },
-          cardboardKeep: { organizationId: CARDBOARD_KEEP_ID, userId: "01920000-0000-7000-8000-000000000301" },
-        }),
+        orders: await seedOrders(
+          tx,
+          {
+            tabletopLantern: { organizationId: TABLETOP_LANTERN_ID, userId: "01920000-0000-7000-8000-000000000201" },
+            cardboardKeep: { organizationId: CARDBOARD_KEEP_ID, userId: "01920000-0000-7000-8000-000000000301" },
+          },
+          { organizationId: DISTRIBUTOR_ID, userId: "01920000-0000-7000-8000-000000000102" },
+        ),
       };
     });
     console.log(

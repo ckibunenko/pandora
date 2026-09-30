@@ -10,6 +10,8 @@ import {
   type OrderListResponse,
   type OrderQuery,
   type OrderStatus,
+  type ConfirmOrder,
+  type RejectOrder,
   type SaveOrderLines,
   type SubmitOrder,
 } from "@pandora/contracts";
@@ -18,6 +20,7 @@ import { Clock } from "../../common/clock/clock.js";
 import { APP_CONFIG, type AppConfig } from "../../common/config/app-config.js";
 import { ApiException } from "../../common/errors/api-exception.js";
 import { IdempotencyService } from "../../common/idempotency/idempotency.service.js";
+import { currentCorrelationId } from "../../common/request-context/request-context.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../infrastructure/prisma/prisma.service.js";
 import { runSerializable } from "../../infrastructure/prisma/serializable.js";
@@ -35,6 +38,7 @@ const LINE_SELECT = {
   edition: true,
   unitPriceMinor: true,
   lineTotalMinor: true,
+  reservation: { select: { quantityReserved: true, quantityConsumed: true, quantityReleased: true } },
   variant: {
     select: {
       sku: true,
@@ -59,25 +63,46 @@ const ORDER_SELECT = {
   submittedAt: true,
   cancelledAt: true,
   cancellationReason: true,
+  confirmedAt: true,
+  rejectedAt: true,
+  rejectionReason: true,
   organization: { select: { id: true, name: true } },
   createdBy: ACTOR_SELECT,
   submittedBy: ACTOR_SELECT,
   cancelledBy: ACTOR_SELECT,
+  confirmedBy: ACTOR_SELECT,
+  rejectedBy: ACTOR_SELECT,
   lines: { select: LINE_SELECT },
 } satisfies Prisma.OrderSelect;
 
 type OrderRecord = Prisma.OrderGetPayload<{ select: typeof ORDER_SELECT }>;
 type LineRecord = OrderRecord["lines"][number];
+type DbStatus = OrderRecord["status"];
 
-const STATUS: Record<OrderRecord["status"], OrderStatus> = {
+const STATUS: Record<DbStatus, OrderStatus> = {
   DRAFT: "draft",
   SUBMITTED: "submitted",
   CANCELLED: "cancelled",
+  CONFIRMED: "confirmed",
+  REJECTED: "rejected",
+};
+const DB_STATUS: Record<OrderStatus, DbStatus> = {
+  draft: "DRAFT",
+  submitted: "SUBMITTED",
+  cancelled: "CANCELLED",
+  confirmed: "CONFIRMED",
+  rejected: "REJECTED",
 };
 
 const isVisible = (line: LineRecord) => line.variant.isActive && line.variant.product.isActive;
+const currentAvailable = (line: LineRecord) =>
+  line.variant.inventory ? line.variant.inventory.sellable - line.variant.inventory.reserved : 0;
 
-function lineDto(line: LineRecord): OrderLine {
+function lineDto(line: LineRecord, status: DbStatus): OrderLine {
+  const reservation = line.reservation;
+  const reservedQuantity = reservation
+    ? reservation.quantityReserved - reservation.quantityConsumed - reservation.quantityReleased
+    : null;
   // Frozen snapshot columns are set together at submission (enforced by a CHECK constraint).
   if (line.sku !== null && line.productName !== null && line.language !== null && line.edition !== null
     && line.unitPriceMinor !== null && line.lineTotalMinor !== null) {
@@ -92,10 +117,11 @@ function lineDto(line: LineRecord): OrderLine {
       unitPriceMinor: line.unitPriceMinor,
       lineTotalMinor: Number(line.lineTotalMinor),
       isAvailable: true,
-      availableQuantity: null,
+      // Staff decide on submitted orders against current stock.
+      availableQuantity: status === "SUBMITTED" ? currentAvailable(line) : null,
+      reservedQuantity,
     };
   }
-  const inventory = line.variant.inventory;
   return {
     id: line.id,
     variantId: line.variantId,
@@ -107,7 +133,8 @@ function lineDto(line: LineRecord): OrderLine {
     unitPriceMinor: line.variant.unitPriceMinor,
     lineTotalMinor: line.variant.unitPriceMinor * line.quantity,
     isAvailable: isVisible(line),
-    availableQuantity: inventory ? inventory.sellable - inventory.reserved : 0,
+    availableQuantity: currentAvailable(line),
+    reservedQuantity,
   };
 }
 
@@ -126,7 +153,9 @@ export class OrdersService {
   }
 
   private orderDto(order: OrderRecord): Order {
-    const lines = order.lines.map(lineDto).sort((a, b) => (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0));
+    const lines = order.lines
+      .map((line) => lineDto(line, order.status))
+      .sort((a, b) => (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0));
     const frozen = order.totalMinor !== null;
     return {
       id: order.id,
@@ -146,6 +175,11 @@ export class OrdersService {
       cancelledBy: order.cancelledBy,
       cancelledAt: order.cancelledAt?.toISOString() ?? null,
       cancellationReason: order.cancellationReason,
+      confirmedBy: order.confirmedBy,
+      confirmedAt: order.confirmedAt?.toISOString() ?? null,
+      rejectedBy: order.rejectedBy,
+      rejectedAt: order.rejectedAt?.toISOString() ?? null,
+      rejectionReason: order.rejectionReason,
     };
   }
 
@@ -160,7 +194,7 @@ export class OrdersService {
   async list(query: OrderQuery, auth: AuthContext): Promise<OrderListResponse> {
     const where: Prisma.OrderWhereInput = {
       ...this.scope(auth),
-      ...(query.status ? { status: query.status === "draft" ? "DRAFT" : query.status === "submitted" ? "SUBMITTED" : "CANCELLED" } : {}),
+      ...(query.status ? { status: DB_STATUS[query.status] } : {}),
     };
     // Both queries observe the same snapshot so the total matches the page.
     const [total, orders] = await this.prisma.$transaction(
@@ -169,7 +203,10 @@ export class OrdersService {
         this.prisma.order.findMany({
           where,
           select: ORDER_SELECT,
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          orderBy:
+            query.sort === "submitted_asc"
+              ? [{ submittedAt: { sort: "asc", nulls: "last" } }, { id: "asc" }]
+              : [{ createdAt: "desc" }, { id: "desc" }],
           skip: (query.page - 1) * query.pageSize,
           take: query.pageSize,
         }),
@@ -387,7 +424,13 @@ export class OrdersService {
       orderSchema,
       async (tx) => {
         const order = await this.findScoped(tx, orderId, auth);
-        this.assertStatus(order, ["DRAFT", "SUBMITTED"], "This order can no longer be cancelled.");
+        this.assertStatus(
+          order,
+          ["DRAFT", "SUBMITTED"],
+          order.status === "CONFIRMED"
+            ? "Confirmed orders cannot be cancelled here yet."
+            : "This order can no longer be cancelled.",
+        );
         this.assertVersion(order, input.version);
         await this.bumpVersion(tx, order, {
           status: "CANCELLED",
@@ -401,6 +444,111 @@ export class OrdersService {
           action: "cancelled",
           before: { status: order.status, version: order.version },
           after: { status: "CANCELLED", version: order.version + 1, reason: input.reason ?? null },
+        });
+        return this.orderDto(await this.findScoped(tx, orderId, auth));
+      },
+      200,
+    );
+  }
+
+  /** Reserves stock for every line in one transaction, or reserves nothing and reports each shortage. */
+  confirm(orderId: string, input: ConfirmOrder, auth: AuthContext, key: string): Promise<Order> {
+    return this.idempotency.execute(
+      { organizationId: auth.user.organization.id, actorId: auth.user.id, operation: "order.confirm", target: orderId, key },
+      input,
+      orderSchema,
+      async (tx) => {
+        const order = await this.findScoped(tx, orderId, auth);
+        this.assertStatus(order, ["SUBMITTED"], "Only submitted orders can be confirmed.");
+        this.assertVersion(order, input.version);
+        const correlationId = currentCorrelationId();
+        if (!correlationId) {
+          throw new Error("Order confirmation requires request context.");
+        }
+
+        const items = await tx.inventoryItem.findMany({
+          where: { variantId: { in: order.lines.map((line) => line.variantId) } },
+          select: { variantId: true, sellable: true, reserved: true },
+        });
+        const stock = new Map(items.map((item) => [item.variantId, item]));
+        const shortages: ErrorDetail[] = [];
+        for (const line of order.lines) {
+          const item = stock.get(line.variantId);
+          const available = item ? item.sellable - item.reserved : 0;
+          if (line.quantity > available) {
+            shortages.push({ field: `lines.${line.sku ?? line.variant.sku}`, message: `Needs ${line.quantity}, only ${available} available.` });
+          }
+        }
+        if (shortages.length > 0) {
+          throw ApiException.insufficientStock(shortages);
+        }
+
+        const now = this.clock.now();
+        const reserved: Record<string, number> = {};
+        for (const line of order.lines) {
+          const reservation = await tx.stockReservation.create({
+            data: { orderLineId: line.id, variantId: line.variantId, quantityReserved: line.quantity, createdAt: now },
+            select: { id: true },
+          });
+          const item = await tx.inventoryItem.update({
+            where: { variantId: line.variantId },
+            data: { reserved: { increment: line.quantity }, updatedAt: now },
+            select: { sellable: true, reserved: true, damaged: true },
+          });
+          await tx.inventoryMovement.create({
+            data: {
+              variantId: line.variantId,
+              type: "RESERVATION",
+              bucket: "RESERVED",
+              delta: line.quantity,
+              sellableAfter: item.sellable,
+              reservedAfter: item.reserved,
+              damagedAfter: item.damaged,
+              reference: order.number,
+              reservationId: reservation.id,
+              actorId: auth.user.id,
+              organizationId: auth.user.organization.id,
+              correlationId,
+              occurredAt: now,
+            },
+          });
+          reserved[line.sku ?? line.variant.sku] = line.quantity;
+        }
+        await this.bumpVersion(tx, order, { status: "CONFIRMED", confirmedAt: now, confirmedById: auth.user.id });
+        await recordAudit(tx, this.clock, auth, {
+          entityType: "order",
+          entityId: orderId,
+          action: "confirmed",
+          before: { status: "SUBMITTED", version: order.version },
+          after: { status: "CONFIRMED", version: order.version + 1, reserved },
+        });
+        return this.orderDto(await this.findScoped(tx, orderId, auth));
+      },
+      200,
+    );
+  }
+
+  reject(orderId: string, input: RejectOrder, auth: AuthContext, key: string): Promise<Order> {
+    return this.idempotency.execute(
+      { organizationId: auth.user.organization.id, actorId: auth.user.id, operation: "order.reject", target: orderId, key },
+      input,
+      orderSchema,
+      async (tx) => {
+        const order = await this.findScoped(tx, orderId, auth);
+        this.assertStatus(order, ["SUBMITTED"], "Only submitted orders can be rejected.");
+        this.assertVersion(order, input.version);
+        await this.bumpVersion(tx, order, {
+          status: "REJECTED",
+          rejectedAt: this.clock.now(),
+          rejectedById: auth.user.id,
+          rejectionReason: input.reason,
+        });
+        await recordAudit(tx, this.clock, auth, {
+          entityType: "order",
+          entityId: orderId,
+          action: "rejected",
+          before: { status: "SUBMITTED", version: order.version },
+          after: { status: "REJECTED", version: order.version + 1, reason: input.reason },
         });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },

@@ -2,7 +2,10 @@ import {
   orderListResponseSchema,
   orderSchema,
   type CancelOrder,
+  type ConfirmOrder,
   type CreateOrder,
+  type OrderStatus,
+  type RejectOrder,
   type SaveOrderLines,
   type SubmitOrder,
 } from "@pandora/contracts";
@@ -27,6 +30,10 @@ export const submitOrder = (orderId: string, body: SubmitOrder, idempotencyKey: 
   request(`/orders/${orderId}/submit`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
 export const cancelOrder = (orderId: string, body: CancelOrder, idempotencyKey: string) =>
   request(`/orders/${orderId}/cancel`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+export const confirmOrder = (orderId: string, body: ConfirmOrder, idempotencyKey: string) =>
+  request(`/orders/${orderId}/confirm`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+export const rejectOrder = (orderId: string, body: RejectOrder, idempotencyKey: string) =>
+  request(`/orders/${orderId}/reject`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
 
 function useOrdersQuery<T>(key: readonly unknown[], queryFn: () => Promise<T>, enabled = true) {
   const session = useSession();
@@ -43,4 +50,10 @@ function useOrdersQuery<T>(key: readonly unknown[], queryFn: () => Promise<T>, e
 export const useOrders = (query: string) => useOrdersQuery(["list", query], () => fetchOrders(query));
 export const useOrder = (orderId: string) => useOrdersQuery(["order", orderId], () => fetchOrder(orderId), !!orderId);
 
-export const STATUS_LABELS = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" } as const;
+export const STATUS_LABELS: Record<OrderStatus, string> = {
+  draft: "Draft",
+  submitted: "Submitted",
+  cancelled: "Cancelled",
+  confirmed: "Confirmed",
+  rejected: "Rejected",
+};

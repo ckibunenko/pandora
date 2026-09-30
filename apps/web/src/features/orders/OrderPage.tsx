@@ -7,7 +7,17 @@ import { useSession } from "../auth/session";
 import { formatPrice, languageLabel } from "../catalog/catalog-api";
 import catalogStyles from "../catalog/Catalog.module.css";
 import { parseWholeNumber } from "../inventory/inventory-api";
-import { ORDERS_QUERY_KEY, STATUS_LABELS, cancelOrder, fetchOrder, saveOrderLines, submitOrder, useOrder } from "./orders-api";
+import {
+  ORDERS_QUERY_KEY,
+  STATUS_LABELS,
+  cancelOrder,
+  confirmOrder,
+  fetchOrder,
+  rejectOrder,
+  saveOrderLines,
+  submitOrder,
+  useOrder,
+} from "./orders-api";
 import styles from "./Orders.module.css";
 
 interface LocalLine {
@@ -30,6 +40,8 @@ function mutationMessage(error: unknown, lostResponse: string): string {
       return `Prices changed for ${skusFrom(error)}. The latest prices are shown now; review them and submit again.`;
     case ERROR_CODES.variantUnavailable:
       return `No longer available: ${skusFrom(error)}. Remove these items to submit.`;
+    case ERROR_CODES.insufficientStock:
+      return `Not enough stock to confirm: ${error.details.map((detail) => `${detail.field.replace(/^lines\./, "")} (${detail.message.replace(/\.$/, "")})`).join("; ")}. Nothing was reserved.`;
     case ERROR_CODES.validationFailed:
       return "Please correct the highlighted fields.";
     default:
@@ -45,6 +57,7 @@ function useOrderCacheUpdate() {
     await Promise.all([
       client.invalidateQueries({ queryKey: [...ORDERS_QUERY_KEY, session.data?.user.id, "list"] }),
       client.invalidateQueries({ queryKey: ["catalog"] }),
+      client.invalidateQueries({ queryKey: ["inventory"] }),
     ]);
   };
 }
@@ -345,7 +358,185 @@ function DraftEditor({ latest }: { latest: Order }) {
   );
 }
 
+function StaffReview({ order }: { order: Order }) {
+  const [panel, setPanel] = useState<"confirm" | "reject" | null>(null);
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState("");
+  const [confirmKey, setConfirmKey] = useState(() => crypto.randomUUID());
+  const [rejectKey, setRejectKey] = useState(() => crypto.randomUUID());
+  const updateCache = useOrderCacheUpdate();
+  const confirm = useMutation({
+    mutationFn: () => confirmOrder(order.id, { version: order.version }, confirmKey),
+    onSuccess: async (updated) => {
+      setConfirmKey(crypto.randomUUID());
+      await updateCache(updated);
+    },
+    onError: async (error) => {
+      if (error instanceof ApiError && error.code === ERROR_CODES.insufficientStock) {
+        // Refresh availability so the shortage flags match the decision the server made.
+        setConfirmKey(crypto.randomUUID());
+        await updateCache(await fetchOrder(order.id));
+      }
+    },
+  });
+  const reject = useMutation({
+    mutationFn: () => rejectOrder(order.id, { version: order.version, reason: reason.trim() }, rejectKey),
+    onSuccess: async (updated) => {
+      setRejectKey(crypto.randomUUID());
+      await updateCache(updated);
+    },
+  });
+  const shortages = order.lines.filter((line) => line.quantity > (line.availableQuantity ?? 0));
+  const units = order.lines.reduce((sum, line) => sum + line.quantity, 0);
+  const busy = confirm.isPending || reject.isPending;
+
+  const onReject = () => {
+    if (reason.trim().length < 3) {
+      setReasonError("Give the retailer a reason of at least 3 characters.");
+      return;
+    }
+    setReasonError("");
+    reject.mutate();
+  };
+
+  return (
+    <>
+      <div className={catalogStyles.tableScroll}>
+        <table className={catalogStyles.table}>
+          <caption className={catalogStyles.srOnly}>Ordered items and current stock</caption>
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>SKU</th>
+              <th className={styles.number}>Ordered</th>
+              <th className={styles.number}>Available now</th>
+              <th>Stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {order.lines.map((line) => {
+              const available = line.availableQuantity ?? 0;
+              const short = line.quantity > available;
+              return (
+                <tr key={line.id} data-test="order-line" data-sku={line.sku}>
+                  <td>
+                    {line.productName}
+                    <small className={styles.lineMeta}>
+                      {languageLabel(line.language)} · {line.edition} · {formatPrice(line.unitPriceMinor)} each
+                    </small>
+                  </td>
+                  <td>{line.sku}</td>
+                  <td className={styles.number}>{line.quantity}</td>
+                  <td className={styles.number} data-test="order-line-available">
+                    {available}
+                  </td>
+                  <td>
+                    {short ? (
+                      <strong className={styles.unavailable} data-test="order-line-shortage">
+                        Short by {line.quantity - available}
+                      </strong>
+                    ) : (
+                      <span className={styles.covered} data-test="order-line-covered">
+                        Covered
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className={styles.total}>
+        Total <strong data-test="order-total">{formatPrice(order.totalMinor)}</strong>
+        <small> Prices were fixed at submission.</small>
+      </p>
+      {shortages.length > 0 && (
+        <p role="status" className={catalogStyles.error} data-test="order-shortage-summary">
+          {shortages.length === 1 ? "One item is" : `${shortages.length} items are`} short of stock. Confirming will fail until stock is
+          received or the order is rejected.
+        </p>
+      )}
+      {confirm.isError && (
+        <p role="alert" className={catalogStyles.error} data-test="order-confirm-error">
+          {mutationMessage(confirm.error, "Could not confirm the decision. Try again; it will not be applied twice.")}
+        </p>
+      )}
+      <div className={styles.actions}>
+        <button className={catalogStyles.primary} onClick={() => setPanel("confirm")} disabled={busy} data-test="order-confirm">
+          Confirm order
+        </button>
+        <button className={catalogStyles.secondary} onClick={() => setPanel("reject")} disabled={busy} data-test="order-reject">
+          Reject order
+        </button>
+      </div>
+
+      {panel === "confirm" && (
+        <section className={styles.panel} aria-labelledby="confirm-heading" data-test="order-confirm-panel">
+          <h2 id="confirm-heading">Confirm {order.number}?</h2>
+          <p>
+            Confirming reserves {units} {units === 1 ? "unit" : "units"} across {order.lines.length}{" "}
+            {order.lines.length === 1 ? "line" : "lines"} for {order.organization.name}. Available stock drops immediately; nothing ships
+            yet. If any line is short, nothing is reserved.
+          </p>
+          <div className={styles.actions}>
+            <button className={catalogStyles.primary} onClick={() => confirm.mutate()} disabled={busy} data-test="order-confirm-submit">
+              {confirm.isPending ? "Confirming…" : "Confirm and reserve stock"}
+            </button>
+            <button className={catalogStyles.secondary} onClick={() => setPanel(null)} disabled={busy}>
+              Back
+            </button>
+          </div>
+        </section>
+      )}
+
+      {panel === "reject" && (
+        <section className={styles.panel} aria-labelledby="reject-heading" data-test="order-reject-panel">
+          <h2 id="reject-heading">Reject {order.number}?</h2>
+          <p>The retailer sees the reason. Rejection does not change stock and cannot be undone.</p>
+          <div className={catalogStyles.field}>
+            <label htmlFor="reject-reason">Reason</label>
+            <textarea
+              id="reject-reason"
+              rows={3}
+              maxLength={500}
+              value={reason}
+              onChange={(event) => {
+                setReason(event.target.value);
+                setRejectKey(crypto.randomUUID());
+                reject.reset();
+              }}
+              aria-invalid={reasonError ? true : undefined}
+              aria-describedby={reasonError ? "reject-reason-error" : undefined}
+              data-test="order-reject-reason"
+            />
+            {reasonError && (
+              <p className={catalogStyles.fieldError} id="reject-reason-error">
+                {reasonError}
+              </p>
+            )}
+          </div>
+          {reject.isError && (
+            <p role="alert" className={catalogStyles.error} data-test="order-reject-error">
+              {mutationMessage(reject.error, "Could not confirm the rejection. Try again; it will not be applied twice.")}
+            </p>
+          )}
+          <div className={styles.actions}>
+            <button className={catalogStyles.primary} onClick={onReject} disabled={busy} data-test="order-reject-submit">
+              {reject.isPending ? "Rejecting…" : "Reject order"}
+            </button>
+            <button className={catalogStyles.secondary} onClick={() => setPanel(null)} disabled={busy}>
+              Back
+            </button>
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
 function FrozenOrder({ order, canCancel }: { order: Order; canCancel: boolean }) {
+  const reserved = order.lines.some((line) => line.reservedQuantity !== null);
   return (
     <>
       <div className={catalogStyles.tableScroll}>
@@ -358,6 +549,7 @@ function FrozenOrder({ order, canCancel }: { order: Order; canCancel: boolean })
               <th className={styles.number}>Unit price</th>
               <th className={styles.number}>Quantity</th>
               <th className={styles.number}>Line total</th>
+              {reserved && <th className={styles.number}>Reserved</th>}
             </tr>
           </thead>
           <tbody>
@@ -375,6 +567,11 @@ function FrozenOrder({ order, canCancel }: { order: Order; canCancel: boolean })
                   {line.quantity}
                 </td>
                 <td className={styles.number}>{formatPrice(line.lineTotalMinor)}</td>
+                {reserved && (
+                  <td className={styles.number} data-test="order-line-reserved">
+                    {line.reservedQuantity ?? 0}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -397,6 +594,10 @@ function History({ order }: { order: Order }) {
   const events = [
     { label: "Created", by: order.createdBy.displayName, at: order.createdAt },
     ...(order.submittedAt && order.submittedBy ? [{ label: "Submitted", by: order.submittedBy.displayName, at: order.submittedAt }] : []),
+    ...(order.confirmedAt && order.confirmedBy ? [{ label: "Confirmed and stock reserved", by: order.confirmedBy.displayName, at: order.confirmedAt }] : []),
+    ...(order.rejectedAt && order.rejectedBy
+      ? [{ label: `Rejected: ${order.rejectionReason ?? ""}`, by: order.rejectedBy.displayName, at: order.rejectedAt }]
+      : []),
     ...(order.cancelledAt && order.cancelledBy
       ? [{ label: order.cancellationReason ? `Cancelled: ${order.cancellationReason}` : "Cancelled", by: order.cancelledBy.displayName, at: order.cancelledAt }]
       : []),
@@ -449,6 +650,8 @@ export function OrderPage() {
           </div>
           {order.data.status === "draft" && isRetailer ? (
             <DraftEditor key={order.data.id} latest={order.data} />
+          ) : order.data.status === "submitted" && !isRetailer ? (
+            <StaffReview key={`${order.data.id}-${order.data.version}`} order={order.data} />
           ) : (
             <FrozenOrder order={order.data} canCancel={isRetailer && order.data.status === "submitted"} />
           )}

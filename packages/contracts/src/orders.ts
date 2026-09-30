@@ -5,7 +5,7 @@ import { pageSchema, pageSizeSchema, paginatedResponseSchema } from "./paginatio
 export const MAX_ORDER_LINES = 100;
 export const MAX_LINE_QUANTITY = 10_000;
 
-export const orderStatusSchema = z.enum(["draft", "submitted", "cancelled"]);
+export const orderStatusSchema = z.enum(["draft", "submitted", "cancelled", "confirmed", "rejected"]);
 export const priceStatusSchema = z.enum(["provisional", "frozen"]);
 
 const versionSchema = z.number().int().min(1);
@@ -46,12 +46,21 @@ export const cancelOrderSchema = z.strictObject({
   reason: z.string().trim().min(1).max(500).optional(),
 });
 
+export const confirmOrderSchema = z.strictObject({ version: versionSchema });
+
+export const rejectOrderSchema = z.strictObject({
+  version: versionSchema,
+  reason: z.string().trim().min(3).max(500),
+});
+
 export const orderParamsSchema = z.object({ orderId: z.uuid() });
 
 export const orderQuerySchema = z.strictObject({
   page: pageSchema,
   pageSize: pageSizeSchema,
   status: orderStatusSchema.optional(),
+  /** `submitted_asc` lists the processing queue oldest submission first. */
+  sort: z.enum(["created_desc", "submitted_asc"]).default("created_desc"),
 });
 
 const actorSchema = z.object({ id: z.uuid(), displayName: z.string() });
@@ -68,8 +77,10 @@ export const orderLineSchema = z.object({
   lineTotalMinor: z.number().int().nonnegative(),
   /** Drafts: whether the variant is still visible in the catalog. Frozen lines are always true. */
   isAvailable: z.boolean(),
-  /** Drafts: current available stock (informational, not reserved). Null for frozen lines. */
+  /** Current available stock while the order awaits a decision (informational, not reserved); otherwise null. */
   availableQuantity: z.number().int().nonnegative().nullable(),
+  /** Units held for this line once the order is confirmed; null before that. */
+  reservedQuantity: z.number().int().nonnegative().nullable(),
 });
 
 const orderFields = {
@@ -96,6 +107,11 @@ export const orderSchema = z.object({
   cancelledBy: actorSchema.nullable(),
   cancelledAt: z.iso.datetime().nullable(),
   cancellationReason: z.string().nullable(),
+  confirmedBy: actorSchema.nullable(),
+  confirmedAt: z.iso.datetime().nullable(),
+  rejectedBy: actorSchema.nullable(),
+  rejectedAt: z.iso.datetime().nullable(),
+  rejectionReason: z.string().nullable(),
 });
 
 export const orderListResponseSchema = paginatedResponseSchema(orderSummarySchema);
@@ -105,6 +121,8 @@ export type CreateOrder = z.infer<typeof createOrderSchema>;
 export type SaveOrderLines = z.infer<typeof saveOrderLinesSchema>;
 export type SubmitOrder = z.infer<typeof submitOrderSchema>;
 export type CancelOrder = z.infer<typeof cancelOrderSchema>;
+export type ConfirmOrder = z.infer<typeof confirmOrderSchema>;
+export type RejectOrder = z.infer<typeof rejectOrderSchema>;
 export type OrderQuery = z.infer<typeof orderQuerySchema>;
 export type OrderLine = z.infer<typeof orderLineSchema>;
 export type Order = z.infer<typeof orderSchema>;

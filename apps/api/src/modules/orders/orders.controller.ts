@@ -2,21 +2,26 @@ import { applyDecorators, Body, Controller, Get, HttpCode, HttpStatus, Param, Po
 import { ApiBody, ApiCookieAuth, ApiHeader, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import {
   cancelOrderSchema,
+  confirmOrderSchema,
   createOrderSchema,
   errorEnvelopeSchema,
   orderListResponseSchema,
   orderParamsSchema,
   orderQuerySchema,
   orderSchema,
+  rejectOrderSchema,
   saveOrderLinesSchema,
   submitOrderSchema,
   type CancelOrder,
+  type ConfirmOrder,
   type CreateOrder,
   type Order,
   type OrderListResponse,
   type OrderQuery,
+  type RejectOrder,
   type SaveOrderLines,
   type SubmitOrder,
+  type UserRole,
 } from "@pandora/contracts";
 import type { z } from "zod";
 import { IDEMPOTENCY_KEY_HEADER, IdempotencyKey } from "../../common/idempotency/idempotency-key.decorator.js";
@@ -31,6 +36,7 @@ const ERROR_SCHEMA = openApiSchema(errorEnvelopeSchema);
 const ORDER_SCHEMA = openApiSchema(orderSchema);
 
 type OrderParams = z.infer<typeof orderParamsSchema>;
+const STAFF: readonly UserRole[] = ["operator", "administrator"];
 
 function queryParams(schema: z.ZodType) {
   const properties = openApiSchema(schema, "input").properties ?? {};
@@ -39,9 +45,15 @@ function queryParams(schema: z.ZodType) {
   );
 }
 
-function orderMutation(schema: z.ZodType, status: number, conflicts: string, idempotent: boolean) {
+function orderMutation(
+  schema: z.ZodType,
+  status: number,
+  conflicts: string,
+  idempotent: boolean,
+  roles: readonly UserRole[] = ["retailer"],
+) {
   return applyDecorators(
-    Roles("retailer"),
+    Roles(...roles),
     ApiHeader({ name: CSRF_HEADER_NAME, required: true }),
     ...(idempotent
       ? [ApiHeader({ name: IDEMPOTENCY_KEY_HEADER, required: true, description: "1–255 printable ASCII characters." })]
@@ -136,5 +148,43 @@ export class OrdersController {
     @CurrentAuth() auth: AuthContext,
   ): Promise<Order> {
     return this.orders.cancel(params.orderId, body, auth, key);
+  }
+
+  @Post(":orderId/confirm")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @orderMutation(
+    confirmOrderSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, VERSION_CONFLICT, INSUFFICIENT_STOCK, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  confirm(
+    @Param(new ZodValidationPipe(orderParamsSchema)) params: OrderParams,
+    @Body(new ZodValidationPipe(confirmOrderSchema)) body: ConfirmOrder,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.orders.confirm(params.orderId, body, auth, key);
+  }
+
+  @Post(":orderId/reject")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @orderMutation(
+    rejectOrderSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  reject(
+    @Param(new ZodValidationPipe(orderParamsSchema)) params: OrderParams,
+    @Body(new ZodValidationPipe(rejectOrderSchema)) body: RejectOrder,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.orders.reject(params.orderId, body, auth, key);
   }
 }
