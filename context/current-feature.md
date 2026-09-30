@@ -4,7 +4,7 @@ Login rate limiting and expired-session cleanup. Repeated failed sign-ins for th
 
 ## Status
 
-Implemented and verified locally on `feature/auth-hardening`; CI runs on the pull request.
+Completed — merged to `main` as `c239416` + `a564c18` (2026-09-30) through PR #2, with CI green.
 
 ## Goal
 
@@ -69,6 +69,10 @@ Guessing a password becomes impractical without revealing which accounts exist, 
   - The first limiter could starve a parallel burst entirely (0 of 12 checked). A per-email advisory lock around "count, then record" now checks exactly 5.
   - The first browser check froze the page with a self-retriggering `MutationObserver`. That hang led to a per-suite timeout in the runner, which kills hung suites together with their children.
 - The migration was applied to the dev database without a reset, and there is no schema drift.
+- **CI on PR #2:**
+  - The first run failed on the admin race check. A request that lost three serialization retries got the defined 409 `CONCURRENT_MODIFICATION`.
+  - Fix: `runSerializable` now waits a short random time between retries, and the race checks accept that outcome. They still require no 500, at most one success, and at least one administrator.
+  - The second run (`36769046435`) passed all 3 jobs and 13 suites.
 
 ## Previous feature
 
@@ -89,3 +93,4 @@ Guessing a password becomes impractical without revealing which accounts exist, 
 - Organization and user administration (2026-09-30): administrator-only organization and account management, immediate session revocation, and distributor/last-administrator protection; fixed retry of commit-time serialization conflicts. API checks 12/12 and typecheck/lint/build passed again before the approved commit on `feature/admin-management`. Earlier browser checks passed 9/9; see [verification](features/admin-management-verification.md). Merged to `main` as `17d5ef5` before starting demo reset automation.
 - Isolated demo reset (2026-09-30): dedicated Compose stack, persistent maintenance, stopped API writers, atomic fixture/session/idempotency restoration, readiness-gated reopening, and fail-closed recovery. Verified with 6 database and 5 lifecycle/browser groups plus administration/fulfillment regressions; demo reset 6/6 and administration 12/12 rerun on fresh databases before merge. Merged to `main` as `ada25a1`.
 - Test and CI setup (2026-09-30): `pnpm check:all` runs every API/PostgreSQL suite and every CDP browser group on fresh, disposable QA databases. GitHub Actions runs typecheck/lint/build, API checks, and browser checks on pushes to `main` and pull requests. Application checks and CI live in this repository. Locally 11/11 suites passed in about 55 s; on GitHub Actions run `36763707451` (PR #1) all 3 jobs and 11 suites passed; see [features/ci-verification.md](features/ci-verification.md). Merged to `main` as `d0bb179`.
+- Sign-in rate limiting and session cleanup (2026-09-30): at most 5 sign-in attempts per normalized email per 15 minutes (429 with `Retry-After`, identical for unknown accounts, digests only, per-email advisory lock so a parallel burst checks exactly 5). Automatic removal of sessions unusable for more than 24 hours. Demo reset also clears attempts. `check:all` gained the auth suites and a per-suite timeout. CI on PR #2 exposed immediate serialization retries colliding, so `runSerializable` now backs off with jitter. Final CI: 3 jobs and 13 suites passed; see [features/auth-hardening-verification.md](features/auth-hardening-verification.md). Merged to `main` as `c239416` + `a564c18`.
