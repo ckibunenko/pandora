@@ -6,6 +6,7 @@ import { PasswordHasher } from "../modules/auth/password-hasher.js";
 
 import { seedCatalog } from "./catalog-seed.js";
 import { seedInventory } from "./inventory-seed.js";
+import { seedOrders } from "./orders-seed.js";
 
 const seedEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test"], { error: "seeding only runs when NODE_ENV is development or test" }),
@@ -57,7 +58,7 @@ async function seed(): Promise<void> {
   const passwordHash = await new PasswordHasher().hash(env.SEED_USER_PASSWORD);
 
   try {
-    const openingMovements = await prisma.$transaction(async (tx) => {
+    const { openingMovements, orders } = await prisma.$transaction(async (tx) => {
       await seedCatalog(tx);
       for (const { id, ...organization } of ORGANIZATIONS) {
         await tx.organization.upsert({ where: { id }, create: { id, ...organization }, update: organization });
@@ -66,11 +67,17 @@ async function seed(): Promise<void> {
         const data = { ...user, passwordHash };
         await tx.user.upsert({ where: { id }, create: { id, ...data }, update: data });
       }
-      return seedInventory(tx);
+      return {
+        openingMovements: await seedInventory(tx),
+        orders: await seedOrders(tx, {
+          tabletopLantern: { organizationId: TABLETOP_LANTERN_ID, userId: "01920000-0000-7000-8000-000000000201" },
+          cardboardKeep: { organizationId: CARDBOARD_KEEP_ID, userId: "01920000-0000-7000-8000-000000000301" },
+        }),
+      };
     });
     console.log(
       `Seeded ${ORGANIZATIONS.length} organizations and ${USERS.length} users; 8 catalog products and 11 variants; ` +
-        `${openingMovements} new opening-balance movements.`,
+        `${openingMovements} new opening-balance movements; ${orders} new demo orders.`,
     );
   } finally {
     await prisma.$disconnect();

@@ -52,6 +52,7 @@ export class IdempotencyService {
     payload: unknown,
     responseSchema: z.ZodType<T>,
     work: (tx: Prisma.TransactionClient) => Promise<T>,
+    responseStatus = 201,
   ): Promise<T> {
     const requestHash = createHash("sha256")
       .update(canonicalJson({ operation: scope.operation, target: scope.target, payload }))
@@ -67,7 +68,7 @@ export class IdempotencyService {
         const result = await work(tx);
         const completed = await tx.idempotencyRecord.updateMany({
           where: { id: claim.id, status: "IN_PROGRESS", leaseExpiresAt: claim.leaseExpiresAt },
-          data: { status: "COMPLETED", responseStatus: 201, responseBody: result, completedAt: this.clock.now() },
+          data: { status: "COMPLETED", responseStatus, responseBody: result, completedAt: this.clock.now() },
         });
         if (completed.count !== 1) {
           // Our lease expired and another request took over; roll back this attempt's effects.

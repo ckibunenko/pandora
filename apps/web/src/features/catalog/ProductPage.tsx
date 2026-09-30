@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link, useParams } from "react-router";
 import type { CatalogProduct } from "@pandora/contracts";
 import { ApiError } from "../../lib/api-client";
+import { useSession } from "../auth/session";
+import { AddToDraft } from "../orders/AddToDraft";
 import { formatPrice, languageLabel, useProduct } from "./catalog-api";
 import { ProductCover } from "./CatalogPage";
 import styles from "./Catalog.module.css";
@@ -9,6 +11,7 @@ import styles from "./Catalog.module.css";
 function ProductDetails({ product }: { product: CatalogProduct }) {
   const [variantId, setVariantId] = useState("");
   const variant = product.variants.find((item) => item.id === variantId);
+  const isRetailer = useSession().data?.user.role === "retailer";
   return (
     <div className={styles.detail}>
       <ProductCover product={product} />
@@ -88,6 +91,9 @@ function ProductDetails({ product }: { product: CatalogProduct }) {
           <p className={styles.muted}>
             Select an edition to view its price and SKU.
           </p>
+        )}
+        {variant && isRetailer && (
+          <AddToDraft key={variant.id} variantId={variant.id} sku={variant.sku} />
         )}
       </section>
     </div>

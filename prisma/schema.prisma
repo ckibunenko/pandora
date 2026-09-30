@@ -27,6 +27,7 @@ model Organization {
   updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   users              User[]
   inventoryMovements InventoryMovement[]
+  orders             Order[]
 
   @@map("organizations")
 }
@@ -45,6 +46,9 @@ model User {
   updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   sessions           Session[]
   inventoryMovements InventoryMovement[]
+  createdOrders      Order[]             @relation("OrderCreatedBy")
+  submittedOrders    Order[]             @relation("OrderSubmittedBy")
+  cancelledOrders    Order[]             @relation("OrderCancelledBy")
 
   @@index([organizationId])
   @@map("users")
@@ -104,6 +108,7 @@ model ProductVariant {
   updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   /// Created by a database trigger for every variant.
   inventory      InventoryItem?
+  orderLines     OrderLine[]
 
   @@index([productId, sku])
   @@map("product_variants")
@@ -198,4 +203,59 @@ model IdempotencyRecord {
 
   @@unique([organizationId, actorId, operation, target, key])
   @@map("idempotency_records")
+}
+
+enum OrderStatus {
+  DRAFT
+  SUBMITTED
+  CANCELLED
+}
+
+model Order {
+  id                 String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  /// Generated from a sequence by the database default; seed rows use reserved low numbers.
+  number             String       @unique @default(dbgenerated("('PO-'::text || lpad((nextval('orders_number_seq'::regclass))::text, 6, '0'::text))")) @db.VarChar(20)
+  organizationId     String       @map("organization_id") @db.Uuid
+  organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  status             OrderStatus
+  /// Increases with every mutation; clients send it to detect concurrent edits.
+  version            Int          @default(1)
+  currency           String       @db.Char(3)
+  /// Frozen at submission; null while the order is a draft.
+  totalMinor         BigInt?      @map("total_minor")
+  createdById        String       @map("created_by_id") @db.Uuid
+  createdBy          User         @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt          DateTime     @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime     @map("updated_at") @db.Timestamptz(3)
+  submittedById      String?      @map("submitted_by_id") @db.Uuid
+  submittedBy        User?        @relation("OrderSubmittedBy", fields: [submittedById], references: [id], onDelete: Restrict)
+  submittedAt        DateTime?    @map("submitted_at") @db.Timestamptz(3)
+  cancelledById      String?      @map("cancelled_by_id") @db.Uuid
+  cancelledBy        User?        @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
+  cancelledAt        DateTime?    @map("cancelled_at") @db.Timestamptz(3)
+  cancellationReason String?      @map("cancellation_reason") @db.VarChar(500)
+  lines              OrderLine[]
+
+  @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([status, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("orders")
+}
+
+/// Snapshot columns stay null while the order is a draft and are frozen at submission.
+model OrderLine {
+  id             String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orderId        String         @map("order_id") @db.Uuid
+  order          Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variantId      String         @map("variant_id") @db.Uuid
+  variant        ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity       Int
+  sku            String?        @db.VarChar(40)
+  productName    String?        @map("product_name") @db.VarChar(120)
+  language       String?        @db.VarChar(2)
+  edition        String?        @db.VarChar(80)
+  unitPriceMinor Int?           @map("unit_price_minor")
+  lineTotalMinor BigInt?        @map("line_total_minor")
+
+  @@unique([orderId, variantId])
+  @@map("order_lines")
 }

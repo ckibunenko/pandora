@@ -1,123 +1,22 @@
 // Browser checks for inventory, driven through the Chrome DevTools protocol (no extra dependencies).
 // Requires a freshly seeded QA API and web server; see context/features/inventory-verification.md.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
+import { checkRunner, startBrowser } from "./cdp.mjs";
 
 const BASE = process.env.INVENTORY_BROWSER_URL ?? "http://localhost:5175";
-const CHROME = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const EVIDENCE = process.env.INVENTORY_CHECK_EVIDENCE ?? join(tmpdir(), "pandora-inventory-evidence");
 const PASSWORD = process.env.SEED_USER_PASSWORD;
-const PORT = Number(process.env.INVENTORY_CDP_PORT ?? 9334);
 assert.ok(PASSWORD, "SEED_USER_PASSWORD must be set (run with --env-file=.env).");
-mkdirSync(EVIDENCE, { recursive: true });
 
-const chrome = spawn(
-  CHROME,
-  [
-    "--headless=new",
-    "--disable-gpu",
-    "--no-first-run",
-    `--remote-debugging-port=${PORT}`,
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), "pandora-inventory-cdp-"))}`,
-    "about:blank",
-  ],
-  { stdio: "ignore" },
-);
-
-let target;
-for (let attempt = 0; attempt < 50 && !target; attempt += 1) {
-  try {
-    const targets = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-    target = targets.find((entry) => entry.type === "page");
-  } catch {
-    await sleep(200);
-  }
-}
-assert.ok(target, "Chrome did not start");
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((resolve) => ws.addEventListener("open", resolve));
-
-let nextId = 1;
-const pending = new Map();
-const pageErrors = [];
-const pausedHandlers = [];
-ws.addEventListener("message", (event) => {
-  const message = JSON.parse(event.data);
-  if (message.id && pending.has(message.id)) {
-    pending.get(message.id)(message);
-    pending.delete(message.id);
-  }
-  if (message.method === "Runtime.exceptionThrown") pageErrors.push(message.params.exceptionDetails.text);
-  if (message.method === "Fetch.requestPaused") for (const handler of pausedHandlers) handler(message.params);
-});
-const send = (method, params = {}) =>
-  new Promise((resolve, reject) => {
-    const id = nextId++;
-    pending.set(id, (message) => (message.error ? reject(new Error(message.error.message)) : resolve(message.result)));
-    ws.send(JSON.stringify({ id, method, params }));
-  });
-const evaluate = async (expression) =>
-  (await send("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true })).result.value;
-async function waitFor(expression, label, timeout = 8000) {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    if (await evaluate(expression)) return;
-    await sleep(100);
-  }
-  throw new Error(`Timed out waiting for: ${label}`);
-}
-const q = (selector) => `document.querySelector(${JSON.stringify(selector)})`;
-const text = (selector) => evaluate(`${q(selector)}?.textContent?.trim() ?? null`);
-const count = (selector) => evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`);
-async function fill(selector, value) {
-  await evaluate(`(() => {
-    const el = ${q(selector)};
-    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
-    Object.getOwnPropertyDescriptor(proto, "value").set.call(el, ${JSON.stringify(value)});
-    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
-  })()`);
-}
-const click = (selector) => evaluate(`${q(selector)}.click()`);
-async function navigate(path) {
-  await evaluate("window.__oldDocument = true");
-  await send("Page.navigate", { url: `${BASE}${path}` });
-  await waitFor("!window.__oldDocument && document.readyState === 'complete'", `navigation to ${path}`);
-}
-async function screenshot(name) {
-  const { data } = await send("Page.captureScreenshot", { format: "png" });
-  writeFileSync(join(EVIDENCE, `${name}.png`), Buffer.from(data, "base64"));
-}
-async function setWidth(width) {
-  await send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
-}
-async function login(email) {
-  await navigate("/login");
-  await waitFor(`!!${q("[data-test=login-email]")}`, "login form");
-  await fill("[data-test=login-email]", email);
-  await fill("[data-test=login-password]", PASSWORD);
-  await click("[data-test=login-submit]");
-  await waitFor(`location.pathname !== "/login" && !!${q("[data-test=logout-button]")}`, `signed in as ${email}`);
-}
-async function logout() {
-  await click("[data-test=logout-button]");
-  await waitFor(`location.pathname === "/login" && !!${q("[data-test=login-email]")}`, "signed out");
-}
-const noHorizontalOverflow = () => evaluate("document.documentElement.scrollWidth <= document.documentElement.clientWidth");
-
-let passed = 0;
-async function check(label, operation) {
-  await operation();
-  passed += 1;
-  console.log(`PASS ${label}`);
-}
+const page = await startBrowser({ base: BASE, evidence: EVIDENCE, port: Number(process.env.INVENTORY_CDP_PORT ?? 9334) });
+const { send, evaluate, q, waitFor, text, count, fill, click, navigate, screenshot, setWidth, noHorizontalOverflow, logout, pageErrors, pausedHandlers } = page;
+const login = (email) => page.login(email, PASSWORD);
+const runner = checkRunner();
+const check = runner.check;
 
 try {
-  await send("Page.enable");
-  await send("Runtime.enable");
   await setWidth(1280);
 
   await check("operator reaches inventory from navigation; list shows seeded stock", async () => {
@@ -257,8 +156,7 @@ try {
     assert.deepEqual(pageErrors, []);
   });
 
-  console.log(`\n${passed} inventory browser check groups passed. Screenshots: ${EVIDENCE}`);
+  console.log(`\n${runner.passed} inventory browser check groups passed. Screenshots: ${EVIDENCE}`);
 } finally {
-  ws.close();
-  chrome.kill();
+  page.close();
 }

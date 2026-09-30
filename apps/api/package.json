@@ -14,7 +14,8 @@
     "db:reset": "prisma migrate reset",
     "db:seed": "prisma generate && nest build && node --env-file-if-exists=../../.env dist/seed/seed.js",
     "check:catalog": "node --env-file-if-exists=../../.env checks/catalog.mjs",
-    "check:inventory": "node --env-file-if-exists=../../.env checks/inventory.mjs"
+    "check:inventory": "node --env-file-if-exists=../../.env checks/inventory.mjs",
+    "check:orders": "node --env-file-if-exists=../../.env checks/orders.mjs"
   },
   "dependencies": {
     "@nestjs/common": "12.1.1",

@@ -51,6 +51,24 @@ export class ApiException extends HttpException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.requestInProgress, "A request with this Idempotency-Key is still in progress.");
   }
 
+  static versionConflict(currentVersion: number): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.versionConflict, "The order changed since you loaded it. Reload to see the latest version.", [
+      { field: "version", message: `The current version is ${currentVersion}.` },
+    ]);
+  }
+
+  static invalidOrderTransition(message: string): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.invalidOrderTransition, message);
+  }
+
+  static priceChanged(details: readonly ErrorDetail[]): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.priceChanged, "Prices changed since you reviewed them.", details);
+  }
+
+  static variantUnavailable(details: readonly ErrorDetail[]): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.variantUnavailable, "Some items are no longer available.", details);
+  }
+
   static concurrentModification(): ApiException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.concurrentModification, "The record changed concurrently. Please retry.");
   }

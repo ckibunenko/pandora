@@ -15,6 +15,8 @@ import { ProductPage } from "../features/catalog/ProductPage";
 import { AdminProductPage } from "../features/catalog/AdminProductPage";
 import { InventoryItemPage, RequireStaff } from "../features/inventory/InventoryItemPage";
 import { InventoryPage } from "../features/inventory/InventoryPage";
+import { OrderPage } from "../features/orders/OrderPage";
+import { OrdersPage } from "../features/orders/OrdersPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +52,8 @@ const router = createBrowserRouter([
                   },
                 ],
               },
+              { path: "/orders", element: <OrdersPage /> },
+              { path: "/orders/:orderId", element: <OrderPage /> },
               {
                 element: <RequireStaff />,
                 children: [

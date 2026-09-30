@@ -34,7 +34,7 @@ export function setCsrfToken(token: string | null): void {
 }
 
 interface RequestOptions<T> {
-  method?: "GET" | "POST" | "PATCH";
+  method?: "GET" | "POST" | "PUT" | "PATCH";
   body?: unknown;
   parse: (body: unknown) => T;
   acceptedErrorStatuses?: readonly number[];

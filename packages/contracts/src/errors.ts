@@ -15,6 +15,10 @@ export const ERROR_CODES = {
   idempotencyKeyReused: "IDEMPOTENCY_KEY_REUSED",
   requestInProgress: "REQUEST_IN_PROGRESS",
   concurrentModification: "CONCURRENT_MODIFICATION",
+  versionConflict: "VERSION_CONFLICT",
+  priceChanged: "PRICE_CHANGED",
+  invalidOrderTransition: "INVALID_ORDER_TRANSITION",
+  variantUnavailable: "VARIANT_UNAVAILABLE",
 } as const;
 
 export const errorDetailSchema = z.object({

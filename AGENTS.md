@@ -41,7 +41,9 @@ OpenAPI (non-production only): http://localhost:3000/api/openapi.json, UI at htt
 Focused feature checks exist, each against its own empty QA database (never the dev database):
 
 - Catalog: `apps/api/checks/catalog.mjs` (HTTP + real PostgreSQL) and `apps/web/checks/catalog-browser.mjs` (Playwright/Chrome). See `context/features/catalog-verification.md`.
-- Inventory: `apps/api/checks/inventory.mjs` (`pnpm --filter @pandora/api check:inventory`) and `apps/web/checks/inventory-browser.mjs` (Chrome DevTools protocol, no extra dependencies). See `context/features/inventory-verification.md`.
+- Inventory: `apps/api/checks/inventory.mjs` (`pnpm --filter @pandora/api check:inventory`) and `apps/web/checks/inventory-browser.mjs`. See `context/features/inventory-verification.md`.
+- Order drafts: `apps/api/checks/orders.mjs` (`pnpm --filter @pandora/api check:orders`) and `apps/web/checks/orders-browser.mjs`. See `context/features/order-drafts-verification.md`.
+- Browser checks drive local Chrome through `apps/web/checks/cdp.mjs` (DevTools protocol, no extra dependencies).
 
 There is no general unit-test framework or CI test pipeline yet.
 
@@ -67,7 +69,8 @@ pnpm workspace monorepo following the target in `context/coding-standards.md`:
   - Cross-cutting pieces in `src/common/`: `ApiExceptionFilter` turns every error into the `{ code, message, correlation_id, details? }` envelope (throw `ApiException` for business errors); `ZodValidationPipe` validates input against contract schemas (422 with field details); `correlationIdMiddleware` sets `X-Correlation-Id`; inject `Clock` instead of calling `new Date()`; `openApiSchema()` documents endpoints from the same Zod schemas.
   - Catalog (`src/modules/catalog/`): authenticated browse reads, administrator-only mutations, immutable SKU/product identity, and transactional `AuditEvent` writes. `CATALOG_CURRENCY=EUR` is required config. Catalog UI lives in `apps/web/src/features/catalog/`.
   - Inventory (`src/modules/inventory/`): one `InventoryItem` per variant (created by a DB trigger), append-only `InventoryMovement`s, receipts and adjustments for operators and administrators. Catalog variants expose `availableQuantity`.
-  - Stock-changing operations follow one pattern — reuse it for reservations, shipments, and returns:
+  - Orders (`src/modules/orders/`): drafts (retailer-editable, version-checked), submission with price review and frozen line snapshots, and retailer cancellation. Every query is scoped to the retailer's organization (another organization's order returns 404); staff read all orders. Database triggers keep submitted lines and totals immutable. Order UI lives in `apps/web/src/features/orders/`.
+  - Consequential mutations (stock changes, order create/submit/cancel) follow one pattern — reuse it for confirmations, reservations, shipments, and returns:
     - Wrap the operation in `IdempotencyService.execute` (`src/common/idempotency/`) and read the key with `@IdempotencyKey()`.
     - It runs the work inside `runSerializable` (`src/infrastructure/prisma/serializable.ts`: Serializable isolation, whole-transaction retry up to 3 attempts, then 409 `CONCURRENT_MODIFICATION`).
     - Inside the work: reread state → validate → update → movement → `recordAudit` (`src/common/audit/audit.ts`), all in the same transaction.

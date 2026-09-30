@@ -13,7 +13,9 @@ Built so far:
 - Catalog browsing, language/edition variants, EUR prices, administrator management, and transactional catalog audit. The seed includes eight fictional products and eleven variants.
 - Inventory per SKU (sellable, reserved, damaged) with stock receipts and adjustments by distributor staff. Every change is an immutable movement with audit. Changes are safe to retry thanks to `Idempotency-Key`, and they don't oversell under concurrency. Retailers see each variant's available quantity in the catalog.
 
-Orders and fulfillment have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+- Order drafts and submission for retailers. Drafts are shared within the retailer organization and protected against concurrent edits. Prices are checked on submission and then frozen, and orders can be cancelled before confirmation.
+
+Order confirmation with stock reservation, shipments, and returns have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
 ## Stack
 
