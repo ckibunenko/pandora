@@ -3,12 +3,12 @@
 // Databases are created on the DATABASE_URL server, kept as evidence, and never dropped.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { openServer } from "./lib/databases.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const apiDir = join(root, "apps/api");
@@ -37,6 +37,7 @@ const API_SUITES = [
   { name: "admin", script: "check:admin", databaseEnv: "ADMIN_CHECK_DATABASE", prefix: "pandora_admin_check" },
   { name: "demo-reset", script: "check:demo-reset", databaseEnv: "DEMO_CHECK_DATABASE", prefix: "pandora_demo_check" },
   { name: "auth", script: "check:auth", databaseEnv: "AUTH_CHECK_DATABASE", prefix: "pandora_auth_check" },
+  { name: "bug-lab", script: "check:bug-lab", runEnv: "BUG_LAB_CHECK_RUN", prefix: "pandora_buglab_check" },
 ];
 // Suites in one group share a seeded database; suites that change the same seed orders are in separate groups.
 const BROWSER_GROUPS = [
@@ -63,8 +64,6 @@ const QA_WEB_PORT = 5175;
 for (const name of ["DATABASE_URL", "SEED_USER_PASSWORD"]) {
   if (!process.env[name]) throw new Error(`${name} must be set (copy .env.example to .env, or set it in CI).`);
 }
-const serverUrl = new URL(process.env.DATABASE_URL);
-const developmentDatabase = serverUrl.pathname.slice(1);
 
 const SUITE_TIMEOUT_MS = Number(process.env.CHECK_SUITE_TIMEOUT_SECONDS ?? 300) * 1000;
 const activeGroups = new Set();
@@ -149,22 +148,10 @@ async function waitUntilUp(url, label, child, log) {
   throw new Error(`${label} did not become ready at ${url}.`);
 }
 
-let database;
+let server;
 async function createDatabase(name) {
-  if (!/^pandora_[a-z0-9_]+$/.test(name) || name === developmentDatabase) {
-    throw new Error(`Refusing to create database "${name}".`);
-  }
-  if (!database) {
-    const requireFromApi = createRequire(join(apiDir, "package.json"));
-    const { PrismaPg } = await import(pathToFileURL(requireFromApi.resolve("@prisma/adapter-pg")).href);
-    const { PrismaClient } = await import(pathToFileURL(join(apiDir, "dist/generated/prisma/client.js")).href);
-    database = new PrismaClient({ adapter: new PrismaPg({ connectionString: serverUrl.toString() }) });
-  }
-  // The name is validated above; identifiers cannot be bound as query parameters.
-  await database.$executeRawUnsafe(`CREATE DATABASE "${name}"`);
-  const url = new URL(serverUrl);
-  url.pathname = `/${name}`;
-  return url.toString();
+  server ??= await openServer(process.env.DATABASE_URL);
+  return server.create(name);
 }
 
 const results = [];
@@ -183,9 +170,11 @@ async function record(suite, databaseName, work) {
 async function runApiSuites() {
   for (const suite of API_SUITES.filter((s) => selected(s.name))) {
     const name = `${suite.prefix}_${runId}`;
-    await record(`api:${suite.name}`, name, async () => {
-      await createDatabase(name);
-      return (await run("pnpm", ["--filter", "@pandora/api", suite.script], { env: { [suite.databaseEnv]: name } })) === 0;
+    await record(`api:${suite.name}`, suite.databaseEnv ? name : `${name}_*`, async () => {
+      // Suites that prepare several databases themselves (Bug Lab) get only the run ID.
+      const env = suite.databaseEnv ? { [suite.databaseEnv]: name } : { [suite.runEnv]: runId };
+      if (suite.databaseEnv) await createDatabase(name);
+      return (await run("pnpm", ["--filter", "@pandora/api", suite.script], { env })) === 0;
     });
   }
 }
@@ -250,7 +239,7 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   exitCode = 1;
 } finally {
-  await database?.$disconnect();
+  await server?.close();
 }
 
 console.log("\nSummary");

@@ -18,8 +18,9 @@ Built so far:
 - Order processing for distributor staff. Staff confirm submitted orders, which reserves stock for every line at once and never oversells, or reject them with a reason. Operators start from the queue of orders awaiting processing.
 - Fulfillment: full and partial shipments that consume reserved stock, and cancellation of remaining quantities through retailer requests that staff approve or reject. The order status follows the shipped and cancelled quantities, so every order can move from draft to a final state.
 - Organization and user administration for administrators. Administrators create retailer stores and accounts, change staff roles, deactivate access, and reset passwords. These changes sign affected users out immediately, and the last administrator cannot be removed.
+- **Bug Lab** for QA practice: an isolated local environment where exactly one known defect (`BUG-001`–`BUG-003`) is switched on. It comes with a defect catalog, learner briefs, separate solutions, and run manifests; see [bug-lab/README.md](bug-lab/README.md). The same automated assertion passes in Standard mode and fails in the Bug Lab.
 
-Returns, notifications, and the Bug Lab have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+Returns and notifications have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
 An isolated local demo can be built and restored with `pnpm demo:build` and `pnpm demo:reset` after creating `.env.demo` from `.env.demo.example`. Reset discards demo changes, signs everyone out, and restores the fixtures behind a maintenance page. Its database is separate from development. Setup, recovery, and verification: [demo reset runbook](context/features/demo-reset-verification.md).
 

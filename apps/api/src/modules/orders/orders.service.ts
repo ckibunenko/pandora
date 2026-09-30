@@ -20,6 +20,7 @@ import {
   type SubmitOrder,
 } from "@pandora/contracts";
 import { recordAudit } from "../../common/audit/audit.js";
+import { BugLab } from "../../common/bug-lab/bug-lab.js";
 import { Clock } from "../../common/clock/clock.js";
 import { APP_CONFIG, type AppConfig } from "../../common/config/app-config.js";
 import { ApiException } from "../../common/errors/api-exception.js";
@@ -149,7 +150,7 @@ const isVisible = (line: LineRecord) => line.variant.isActive && line.variant.pr
 const currentAvailable = (line: LineRecord) =>
   line.variant.inventory ? line.variant.inventory.sellable - line.variant.inventory.reserved : 0;
 
-function lineDto(line: LineRecord, status: DbStatus): OrderLine {
+function lineDto(line: LineRecord, status: DbStatus, bugLab: BugLab): OrderLine {
   const reservation = line.reservation;
   const reservedQuantity = reservation
     ? reservation.quantityReserved - reservation.quantityConsumed - reservation.quantityReleased
@@ -157,6 +158,8 @@ function lineDto(line: LineRecord, status: DbStatus): OrderLine {
   // Frozen snapshot columns are set together at submission (enforced by a CHECK constraint).
   if (line.sku !== null && line.productName !== null && line.language !== null && line.edition !== null
     && line.unitPriceMinor !== null && line.lineTotalMinor !== null) {
+    // Bug Lab BUG-003: show the current catalog price instead of the frozen snapshot (Standard: always the snapshot).
+    const bug003 = bugLab.has("BUG-003");
     return {
       id: line.id,
       variantId: line.variantId,
@@ -165,8 +168,8 @@ function lineDto(line: LineRecord, status: DbStatus): OrderLine {
       language: catalogLanguageSchema.parse(line.language),
       edition: line.edition,
       quantity: line.quantity,
-      unitPriceMinor: line.unitPriceMinor,
-      lineTotalMinor: Number(line.lineTotalMinor),
+      unitPriceMinor: bug003 ? line.variant.unitPriceMinor : line.unitPriceMinor,
+      lineTotalMinor: bug003 ? line.variant.unitPriceMinor * line.quantity : Number(line.lineTotalMinor),
       isAvailable: true,
       // Staff decide on submitted orders against current stock.
       availableQuantity: status === "SUBMITTED" ? currentAvailable(line) : null,
@@ -202,6 +205,7 @@ export class OrdersService {
     private readonly clock: Clock,
     private readonly idempotency: IdempotencyService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly bugLab: BugLab,
   ) {}
 
   /** Retailers only ever see their own organization's orders; staff see all. */
@@ -211,7 +215,7 @@ export class OrdersService {
 
   private orderDto(order: OrderRecord): Order {
     const lines = order.lines
-      .map((line) => lineDto(line, order.status))
+      .map((line) => lineDto(line, order.status, this.bugLab))
       .sort((a, b) => (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0));
     const frozen = order.totalMinor !== null;
     return {
@@ -282,7 +286,8 @@ export class OrdersService {
             query.sort === "submitted_asc"
               ? [{ submittedAt: { sort: "asc", nulls: "last" } }, { id: "asc" }]
               : [{ createdAt: "desc" }, { id: "desc" }],
-          skip: (query.page - 1) * query.pageSize,
+          // Bug Lab BUG-002: page 2 onward starts one row early (Standard: exact page boundaries).
+          skip: (query.page - 1) * query.pageSize - (this.bugLab.has("BUG-002") && query.page > 1 ? 1 : 0),
           take: query.pageSize,
         }),
       ],
@@ -713,9 +718,12 @@ export class OrdersService {
           shippedBySku[line.sku ?? line.variant.sku] = item.quantity;
         }
         const shippedQuantities = new Map(input.items.map((item) => [item.orderLineId, item.quantity]));
-        const status = deriveFulfillmentStatus(
+        const derived = deriveFulfillmentStatus(
           order.lines.map((line) => ({ ...line, shippedQuantity: line.shippedQuantity + (shippedQuantities.get(line.id) ?? 0) })),
         );
+        // Bug Lab BUG-001: the final shipment of an already partially shipped order keeps it partially_shipped
+        // (Standard: shipped). Only a database marked for BUG-001 accepts that state.
+        const status = this.bugLab.has("BUG-001") && order.status === "PARTIALLY_SHIPPED" && derived === "SHIPPED" ? "PARTIALLY_SHIPPED" : derived;
         await this.bumpVersion(tx, order, { status });
         await recordAudit(tx, this.clock, auth, {
           entityType: "order",

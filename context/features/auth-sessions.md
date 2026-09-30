@@ -50,8 +50,8 @@ Completed
 - `pnpm typecheck`, `pnpm lint`, `pnpm build` pass.
 - Not run: `db:reset` followed by `db:seed` (a second reset would need another consent). A fresh migration followed by a seed was verified once.
 - Known limitations (accepted for now):
-  - There is no login rate limiting or lockout; this is needed before a public demo exists. *Resolved later: see [auth-hardening-verification.md](auth-hardening-verification.md).*
-  - Expired and revoked session rows are never cleaned up. *Resolved later: see [auth-hardening-verification.md](auth-hardening-verification.md).*
+  - There is no login rate limiting or lockout; this is needed before a public demo exists. *Resolved later: see [auth-hardening.md](auth-hardening.md).*
+  - Expired and revoked session rows are never cleaned up. *Resolved later: see [auth-hardening.md](auth-hardening.md).*
   - There are no automated tests yet. *Resolved later: see [ci-verification.md](ci-verification.md).*
   - `.env.example` holds the development demo password, so the public demo must set its own `SEED_USER_PASSWORD`.
 

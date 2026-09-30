@@ -20,6 +20,7 @@
     "check:fulfillment": "node --env-file-if-exists=../../.env checks/fulfillment.mjs",
     "check:admin": "node --env-file-if-exists=../../.env checks/administration.mjs",
     "check:auth": "node --env-file-if-exists=../../.env checks/auth.mjs",
+    "check:bug-lab": "node --env-file-if-exists=../../.env checks/bug-lab.mjs",
     "check:demo-reset": "node --env-file-if-exists=../../.env checks/demo-reset.mjs"
   },
   "dependencies": {

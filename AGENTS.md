@@ -46,6 +46,7 @@ Focused feature checks exist, each against its own empty QA database (never the 
 - Order processing: `apps/api/checks/order-processing.mjs` (`pnpm --filter @pandora/api check:processing`, built on the shared `apps/api/checks/harness.mjs`) and `apps/web/checks/order-processing-browser.mjs`. See `context/features/order-processing-verification.md`. Browser suites that change the same seed orders need separate fresh databases.
 - Fulfillment: `apps/api/checks/fulfillment.mjs` (`pnpm --filter @pandora/api check:fulfillment`) and `apps/web/checks/fulfillment-browser.mjs`. See `context/features/fulfillment-verification.md`.
 - Organization and user administration: `apps/api/checks/administration.mjs` (`pnpm --filter @pandora/api check:admin`) and `apps/web/checks/admin-browser.mjs`. See `context/features/admin-management-verification.md`.
+- Bug Lab: `apps/api/checks/bug-lab.mjs` (`pnpm --filter @pandora/api check:bug-lab`); see `context/features/bug-lab-verification.md`.
 - Sign-in rate limiting and session cleanup: `apps/api/checks/auth.mjs` (`pnpm --filter @pandora/api check:auth`) and `apps/web/checks/auth-browser.mjs`. See `context/features/auth-hardening-verification.md`.
 - Browser checks drive local Chrome through `apps/web/checks/cdp.mjs` (DevTools protocol, no extra dependencies).
 
@@ -72,6 +73,22 @@ CI uses CI-only credentials and no repository secrets. There is no unit-test fra
 - Shared fixtures live in `apps/api/src/seed/seed-data.ts`; normal `db:seed` remains development/test-only. `restore-demo-data.ts` is an operator-only transaction, not an API operation.
 - Verification: `DEMO_CHECK_DATABASE=pandora_demo_check_<unique> pnpm --filter @pandora/api check:demo-reset` on an empty QA database; `apps/web/checks/demo-reset-browser.mjs` on a disposable `pandora-demo-qa-*` Compose project. See [runbook and evidence](context/features/demo-reset-verification.md).
 - No scheduler/public deployment is installed. Future workers must join the reset stop/start lifecycle; new tables need explicit reset review.
+
+## Bug Lab
+
+Isolated defect environment (overview §9); learner-facing docs are in [bug-lab/](bug-lab/README.md).
+
+- **Setup and start:**
+  - `pnpm bug-lab setup --defect BUG-001|BUG-002|BUG-003|none` creates `pandora_buglab_<defect>_<run>`, migrates, seeds, and adds scenario fixtures (40 extra Tabletop Lantern drafts, `PO-000101`–`PO-000140`).
+  - It then sets the database marker `pandora.defect` and writes a run manifest to `bug-lab/runs/` (gitignored).
+  - `pnpm bug-lab start --run <id>` serves it on 5176 (API 3020).
+- **Selection:** the API reads `BUG_LAB_DEFECT` and accepts exactly one known ID. It refuses to start when:
+  - `NODE_ENV=production`;
+  - the database is not named `pandora_buglab…`;
+  - the database marker and `BUG_LAB_DEFECT` differ in either direction (`BugLab.onModuleInit`).
+- **Code:** each defect is one `bugLab.has("BUG-00X")` guard in `OrdersService` (ship status, list offset, frozen line prices). Never add defect logic anywhere else, and never change Standard behavior to make a defect pass.
+- **Database:** migration `20260930200000_bug_lab_marker` lets the status trigger accept exactly the `BUG-001` state (`PARTIALLY_SHIPPED` where `SHIPPED` is derived), and only in a database marked `BUG-001`.
+- **Verification:** `pnpm --filter @pandora/api check:bug-lab` (in `check:all`, which passes it a run ID) prepares its own Standard and defect databases.
 
 ## Demo accounts
 

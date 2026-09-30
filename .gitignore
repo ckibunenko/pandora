@@ -21,3 +21,6 @@ apps/api/src/generated/
 # debug
 npm-debug.log*
 .pnpm-debug.log*
+
+# Bug Lab run manifests (local runs only)
+bug-lab/runs/
