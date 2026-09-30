@@ -75,3 +75,4 @@
 - Worker and inbox isolation must be added with notifications (Phase 3).
 - Combined defects and concurrency defects are later extensions (overview §9).
 - Local Bug Lab databases accumulate; the tools never drop them.
+- **CI on PR #3** (run `36771619586`): passed all 3 jobs and 14 suites on the first run; `api:bug-lab` took 23 s.
