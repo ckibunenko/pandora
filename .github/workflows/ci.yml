@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# CI-only values: they exist only inside the disposable service container of each job.
+env:
+  DATABASE_URL: postgresql://pandora:pandora-ci@localhost:5432/pandora_ci?schema=public
+  API_PORT: "3000"
+  CATALOG_CURRENCY: EUR
+  SESSION_COOKIE_SECURE: "false"
+  SEED_USER_PASSWORD: ci-only-demo-password
+
+jobs:
+  gates:
+    name: Typecheck, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build
+
+  api-checks:
+    name: API and PostgreSQL checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: pandora
+          POSTGRES_PASSWORD: pandora-ci
+          POSTGRES_DB: pandora_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pandora -d pandora_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:all --api
+
+  browser-checks:
+    name: Browser checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: pandora
+          POSTGRES_PASSWORD: pandora-ci
+          POSTGRES_DB: pandora_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pandora -d pandora_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check:all --browser --evidence "$RUNNER_TEMP/evidence"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-evidence
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore

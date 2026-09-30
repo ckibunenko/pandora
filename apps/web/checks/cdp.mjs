@@ -17,6 +17,8 @@ export async function startBrowser({ base, evidence, port }) {
       "--headless=new",
       "--disable-gpu",
       "--no-first-run",
+      // GitHub's Ubuntu runners block the unprivileged namespaces Chrome's sandbox needs.
+      ...(process.env.CI === "true" ? ["--no-sandbox"] : []),
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${mkdtempSync(join(tmpdir(), "pandora-cdp-"))}`,
       "about:blank",

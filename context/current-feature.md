@@ -1,47 +1,70 @@
 ## Current Feature
 
-Safe demo reset tooling for an isolated Docker Compose stack.
+Test and CI setup. One command runs every application check on fresh, disposable databases, and GitHub Actions runs it for every push to `main` and every pull request (overview §10–§11, coding standards §9).
 
 ## Status
 
-Completed — merged to `main` as `ada25a1` (2026-09-30). Administration was merged to `main` as `17d5ef5`.
+Implemented and verified locally on `feature/ci`. The GitHub Actions run is pending: it starts once the branch is pushed, and pushing needs approval.
 
 ## Goal
 
-Restore the fictional demo to its deterministic seed without touching the development database, admitting mutations during reset, or reopening the demo after a failed restoration.
+A regression cannot reach `main` unnoticed: gates, API/PostgreSQL checks, and browser checks run automatically against real PostgreSQL. The same command runs locally, so nobody has to create QA databases by hand.
 
 ## Scope and decisions (2026-09-30)
 
-- A separate Compose file/project runs PostgreSQL, the API, and a web/reverse-proxy container. Only the web port is published, on loopback by default. Database volumes and networks are separate from development.
-- An operator CLI owns reset; no business role, browser page, or API endpoint can invoke it.
-- Lifecycle: acquire an exclusive operator lock → start database/proxy if needed → persist a maintenance marker → stop API and wait for exit → migrate → atomically truncate business/session/idempotency data and restore seed → start API and wait for readiness → clear maintenance.
-- The reverse proxy serves a maintenance page and returns 503 `MAINTENANCE` for API calls while the marker exists. Its volume survives container restarts.
-- Stopping the API drains or terminates all its work before restoration. No worker exists yet; any future worker must be included in the stop/start lifecycle before deployment.
-- The reset command is restricted to the dedicated `pandora_demo` database in the demo stack. Tests use explicitly named disposable QA databases. It refuses other database names and other connected database clients.
-- Truncation, seed, sequence restart, and verification share one transaction. It never calls `prisma migrate reset`, drops a database, disables constraints, or resets development data.
-- Old sessions and idempotency receipts disappear. Both business-number sequences return to 1001; fixed seed records keep their reserved low numbers.
-- Failure leaves maintenance active and API stopped. A successful retry is the recovery path; no automatic unlock after a killed operator process.
-- No hosting or scheduler is selected. Document the intended daily 03:00 Europe/Belgrade schedule and operator recovery; actual scheduled deployment remains pending.
+- Branch: `feature/ci`.
+- **Ownership (overview §11 open decision):**
+  - Application verification and CI live in this repository.
+  - The companion QA repository keeps portfolio E2E automation, exploratory records, and release evidence.
+  - Recommended by Claude; the user said "kreni" without choosing otherwise.
+- **`pnpm check:all` (`scripts/check-all.mjs`):**
+  - `--api`, `--browser`, or both by default; `--skip-build` when the build has already run.
+  - Each API suite gets a fresh database named for its check pattern plus a run id.
+  - Each browser group gets a fresh database, migrated and seeded, and its own QA API on 3013. One web server on 5175 proxies to it.
+  - Suites that change the same seed orders are in separate groups.
+  - Suites run one after another, because concurrency checks must not compete for CPU with other suites.
+  - Databases are created through the configured `DATABASE_URL` server, never on the development database. Names are validated before use.
+  - The script prints each database used. They are kept as evidence, and the script never drops databases.
+  - Screenshots go to one evidence directory (`--evidence`, default under the system temp directory).
+- **Excluded from the runner, with the reason printed:**
+  - `catalog-browser.mjs`: it needs an external Playwright install, which is not a dependency.
+  - `demo-reset-browser.mjs`: it needs the Docker demo stack.
+  - Their API/PostgreSQL counterparts (`catalog`, `demo-reset`) run.
+- **GitHub Actions (`.github/workflows/ci.yml`):**
+  - Triggers: pushes to `main`, pull requests, and manual runs. Read-only permissions; concurrent runs of the same ref are cancelled.
+  - Jobs:
+    - `gates`: install with the frozen lockfile, then typecheck, lint, and build.
+    - `api-checks`: PostgreSQL 18.6 service, all API suites.
+    - `browser-checks`: PostgreSQL service, the installed Chrome, all CDP browser suites.
+  - Node comes from `.nvmrc`; pnpm comes from `packageManager`.
+  - Screenshots are uploaded when the browser job fails.
+  - CI uses CI-only values (`SEED_USER_PASSWORD` and database credentials) that exist only in the disposable service container. There are no repository secrets.
+- **Chrome in CI:** GitHub's Ubuntu runners restrict the Chrome sandbox, so `cdp.mjs` adds `--no-sandbox` only when `CI=true`.
+- **Out of scope:**
+  - a unit-test framework (no dependency added now; pure logic stays covered through the API checks);
+  - porting the Playwright catalog browser check;
+  - running the Docker demo stack in CI;
+  - branch protection rules (GitHub settings, the user's decision).
 
 ## Verification
 
-- Build/typecheck/lint and diff checks.
-- Disposable PostgreSQL: seed restoration after real changes; session/idempotency removal; sequence restart; repeat reset; rejected wrong target; other-client refusal; transaction rollback on restore failure.
-- Isolated demo stack: API inaccessible directly, maintenance 503 at the public entry point, exclusive concurrent reset, API stopped before data changes, failed reset stays closed, successful recovery and login.
-- Browser: maintenance presentation and sign-in/catalog after restoration.
-- Existing administration and fulfillment API regression checks on fresh QA databases because the normal seed is extracted for reuse.
+- `pnpm check:all` passes locally from a clean state (API and browser).
+- A deliberately failing suite makes the runner exit non-zero and names the suite.
+- A busy QA port, and invalid or development-database targets, are refused.
+- The workflow runs on GitHub after the branch is pushed, with all three jobs green.
+- `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check` pass.
 
 ## Implementation results (2026-09-30)
 
-- Added the isolated Compose stack, operator reset CLI, transactional restoration, and a maintenance page/API envelope. Extracted the existing fixtures for reuse without changing normal seed behavior.
-- Database checks: 6/6. Docker lifecycle/browser checks: 5/5, including deliberately failed restoration and recovery. Administration regression: 12/12; fulfillment regression: 11/11.
-- Both Docker images, typecheck, lint, build, and diff checks passed; the existing Vite chunk-size warning remains.
-- [Runbook, reproduction commands, results, and limitations](features/demo-reset-verification.md).
-- Actual public hosting and the daily scheduler remain unconfigured. Next planned work: test/CI setup, login rate limiting, and expired-session cleanup.
+- Evidence and details: [features/ci-verification.md](features/ci-verification.md).
+- `pnpm check:all` passes locally with 11 of 11 suites (7 API, 4 browser groups) in about 55 seconds.
+- The failure paths exit 1: a busy port, a broken Chrome, and no suite selected.
+- The first run exposed a leftover QA web server listening on IPv6 only, which the port check had missed. The check now covers IPv4 and IPv6.
+- The GitHub Actions workflow is written but has not run yet.
 
 ## Previous feature
 
-[Organization and user administration](features/admin-management.md) is merged as `17d5ef5`; [verification](features/admin-management-verification.md).
+[Isolated demo reset](features/demo-reset.md) is merged as `ada25a1`; [verification](features/demo-reset-verification.md). Earlier: [organization and user administration](features/admin-management.md), [fulfillment](features/fulfillment.md), [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth and sessions](features/auth-sessions.md). Still outstanding: login rate limiting, session cleanup, audit foreign keys, shared UI primitives, and scheduling/hosting for the demo reset.
 
 ## History
 

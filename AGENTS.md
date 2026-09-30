@@ -48,7 +48,20 @@ Focused feature checks exist, each against its own empty QA database (never the 
 - Organization and user administration: `apps/api/checks/administration.mjs` (`pnpm --filter @pandora/api check:admin`) and `apps/web/checks/admin-browser.mjs`. See `context/features/admin-management-verification.md`.
 - Browser checks drive local Chrome through `apps/web/checks/cdp.mjs` (DevTools protocol, no extra dependencies).
 
-There is no general unit-test framework or CI test pipeline yet.
+`pnpm check:all` (`scripts/check-all.mjs`) runs everything above in one go:
+- It builds first, then runs every API suite on its own fresh database, then the CDP browser suites.
+- Each browser group gets a fresh seeded database, a QA API on 3013, and a shared web server on 5175.
+- Options: `--api`, `--browser`, `--only <name>`, `--skip-build`, `--evidence <dir>`.
+- It refuses to start if 3013 or 5175 is in use.
+- It creates databases on the `DATABASE_URL` server and never drops them.
+- Not run: `catalog-browser.mjs` (external Playwright) and `demo-reset-browser.mjs` (Docker demo stack).
+
+CI (`.github/workflows/ci.yml`) runs three jobs on pushes to `main`, pull requests, and manual runs:
+- typecheck, lint, and build;
+- `check:all --api` against a PostgreSQL 18.6 service;
+- `check:all --browser` with the runner's Chrome (`--no-sandbox` only when `CI=true`).
+
+CI uses CI-only credentials and no repository secrets. There is no unit-test framework yet.
 
 ## Isolated demo
 

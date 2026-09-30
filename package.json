@@ -11,6 +11,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @pandora/contracts build && pnpm -r typecheck",
     "lint": "eslint .",
+    "check:all": "node --env-file-if-exists=.env scripts/check-all.mjs",
     "demo:build": "docker compose --env-file .env.demo -f compose.demo.yml build api web",
     "demo:reset": "node --env-file=.env.demo scripts/demo-reset.mjs"
   },

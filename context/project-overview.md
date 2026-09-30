@@ -221,7 +221,9 @@ Support semantic HTML, keyboard navigation, visible focus, accessible dialogs, m
 
 Approximately 80% of distinct automation-relevant targets expose stable `data-test="kebab-case-purpose"` attributes. The remaining approximately 20% intentionally exercise semantic/accessibility locators or stable CSS relationships/relative XPath. Never rely on generated CSS-module classes, absolute XPath, row position, or timestamps. Scope repeated targets with a stable SKU or order number. Maintain an explicit list of intentionally uncovered targets; renaming/removing a `data-test` is a contract change.
 
-The companion QA repository owns portfolio automation, exploratory records, and release evidence. This separation does not waive application verification or prohibit focused unit/integration tests. Decide concrete test and CI ownership with the implementation setup.
+The companion QA repository owns portfolio automation, exploratory records, and release evidence. This separation does not waive application verification or prohibit focused unit/integration tests. Decided (2026-09-30):
+- Application checks and CI live in this repository: `pnpm check:all` and GitHub Actions on pushes to `main` and on pull requests.
+- The QA repository keeps portfolio E2E automation and release evidence.
 
 ## 9. Sandbox, Bug Lab, and observability
 
@@ -261,4 +263,4 @@ Keep this overview stable and concise. Put detailed data modeling in a separate 
 
 The `context/` directory contains this overview, `coding-standards.md`, `ai-interaction.md`, and `current-feature.md`, all referenced from `AGENTS.md`. The previously mentioned phase specifications do not exist yet; do not treat them as available context.
 
-Catalog defaults are now EUR, eight fictional products, and eleven variants; see [features/catalog.md](features/catalog.md). Remaining decisions: expand lifecycle seed fixtures; define detailed endpoint/data contracts for remaining features and operational diagnostic permissions; settle test/CI ownership; select hosting, scheduler, resource limits/costs, public URL, and HTTPS configuration. These decisions must preserve the confirmed fictional domain, QA purpose, and prohibition on AI features and mandatory paid integrations.
+Catalog defaults are now EUR, eight fictional products, and eleven variants; see [features/catalog.md](features/catalog.md). Remaining decisions: expand lifecycle seed fixtures; define detailed endpoint/data contracts for remaining features and operational diagnostic permissions; select hosting, scheduler, resource limits/costs, public URL, and HTTPS configuration. These decisions must preserve the confirmed fictional domain, QA purpose, and prohibition on AI features and mandatory paid integrations.

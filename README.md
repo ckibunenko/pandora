@@ -75,6 +75,17 @@ Two more accounts exist for negative testing and cannot sign in: `former@tableto
 | `pnpm lint` | Lint the repository |
 | `pnpm --filter @pandora/api db:migrate` | Apply migrations to the development database |
 | `pnpm --filter @pandora/api db:seed` | Load the demo data (safe to run repeatedly) |
+| `pnpm check:all` | Build, then run every API/PostgreSQL and browser check, each on its own fresh QA database (needs PostgreSQL and Chrome) |
+
+## Continuous integration
+
+GitHub Actions runs on every push to `main` and on every pull request. It has three jobs:
+
+- typecheck, lint, and build;
+- all API/PostgreSQL checks against a real PostgreSQL service;
+- all browser checks in headless Chrome.
+
+Locally, `pnpm check:all` runs the same checks and prints a pass/fail summary with the databases it used.
 
 ## API
 
