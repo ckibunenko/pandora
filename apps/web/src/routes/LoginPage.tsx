@@ -54,6 +54,7 @@ export function LoginPage() {
   const signIn = useMutation({
     mutationFn: login,
     onSuccess: (newSession) => {
+      queryClient.clear();
       queryClient.setQueryData(SESSION_QUERY_KEY, newSession);
       void navigate(redirectTarget(location.state), { replace: true });
     },

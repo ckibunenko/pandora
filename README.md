@@ -10,8 +10,9 @@ Built so far:
 
 - Architecture: web app, API, shared contracts, and PostgreSQL database.
 - Sign-in with server-side sessions for retailers, distributor operators, and administrators, using seeded demo accounts.
+- Catalog browsing, language/edition variants, EUR prices, administrator management, and transactional catalog audit. The seed includes eight fictional products and eleven variants.
 
-Catalog, inventory, orders, and fulfillment have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+Inventory, orders, and fulfillment have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
 ## Stack
 
@@ -42,6 +43,8 @@ pnpm --filter @pandora/api db:seed
 pnpm dev
 ```
 
+Existing installations must add `CATALOG_CURRENCY=EUR` to `.env`, apply the catalog migration with `pnpm --filter @pandora/api db:deploy`, and rerun the seed.
+
 Open http://localhost:5173 and sign in with a demo account. Every account uses the password set in `SEED_USER_PASSWORD` in your `.env`.
 
 | Email | Role |
@@ -69,3 +72,7 @@ Two more accounts exist for negative testing and cannot sign in: `former@tableto
 - OpenAPI document: http://localhost:3000/api/openapi.json (interactive docs at `/api/docs`; not served in production).
 - Errors share one shape: `{ code, message, correlation_id, details? }`. Every response carries an `X-Correlation-Id` header that matches `correlation_id`.
 - `GET /api/health` returns 200 while the API process is running. `GET /api/health/ready` returns 200 when the database is reachable and 503 when it is not.
+
+## Catalog verification
+
+Run `pnpm typecheck`, `pnpm lint`, and `pnpm build`. Focused catalog integration checks use a separate empty PostgreSQL database; the browser harness uses that QA API and an externally installed Playwright/Chrome. Reproduction commands, selector contracts, and results are in [context/features/catalog-verification.md](context/features/catalog-verification.md).

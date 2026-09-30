@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:reset": "prisma migrate reset",
-    "db:seed": "prisma generate && nest build && node --env-file-if-exists=../../.env dist/seed/seed.js"
+    "db:seed": "prisma generate && nest build && node --env-file-if-exists=../../.env dist/seed/seed.js",
+    "check:catalog": "node --env-file-if-exists=../../.env checks/catalog.mjs"
   },
   "dependencies": {
     "@nestjs/common": "12.1.1",

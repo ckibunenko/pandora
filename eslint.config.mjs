@@ -17,8 +17,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/api/**/*.ts", "packages/**/*.ts", "**/*.config.{ts,mjs}"],
+    files: ["apps/api/**/*.ts", "apps/api/checks/**/*.mjs", "apps/web/checks/**/*.mjs", "packages/**/*.ts", "**/*.config.{ts,mjs}"],
     languageOptions: { globals: globals.node },
+  },
+  {
+    files: ["apps/web/checks/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {
     // Nest DI needs constructor-injected classes as value imports for decorator metadata.

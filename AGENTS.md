@@ -38,7 +38,7 @@ Run from the repository root:
 
 OpenAPI (non-production only): http://localhost:3000/api/openapi.json, UI at http://localhost:3000/api/docs.
 
-There is no test suite yet.
+Focused catalog checks now exist: `apps/api/checks/catalog.mjs` (HTTP + real PostgreSQL) and `apps/web/checks/catalog-browser.mjs` (Playwright/Chrome). See `context/features/catalog-verification.md` for the isolated database setup. There is no general unit-test framework or CI test pipeline yet.
 
 ## Demo accounts
 
@@ -60,6 +60,7 @@ pnpm workspace monorepo following the target in `context/coding-standards.md`:
 - `apps/web` — React + Vite, React Router, TanStack Query, CSS Modules; design tokens in `src/styles/global.css`. All HTTP goes through `src/lib/api-client.ts`, which parses responses with contract schemas, turns error envelopes into `ApiError`, and adds the CSRF header (token kept in memory only). Protected routes are nested under `RequireAuth` (`src/features/auth/`).
 - `apps/api` — NestJS (ESM) with global prefix `/api`. Startup config is validated with Zod in `src/common/config/app-config.ts` and the process exits if it is invalid. `PrismaService` (`src/infrastructure/prisma`) is the single Prisma client, using the `pg` driver adapter. Feature modules live in `src/modules/`.
   - Cross-cutting pieces in `src/common/`: `ApiExceptionFilter` turns every error into the `{ code, message, correlation_id, details? }` envelope (throw `ApiException` for business errors); `ZodValidationPipe` validates input against contract schemas (422 with field details); `correlationIdMiddleware` sets `X-Correlation-Id`; inject `Clock` instead of calling `new Date()`; `openApiSchema()` documents endpoints from the same Zod schemas.
+  - Catalog (`src/modules/catalog/`): authenticated browse reads, administrator-only mutations, immutable SKU/product identity, and transactional `AuditEvent` writes. `CATALOG_CURRENCY=EUR` is required config. Catalog UI lives in `apps/web/src/features/catalog/`.
   - Auth (`src/modules/auth/`): global guards run in order session → CSRF → roles. Every route requires a session unless marked `@Public()`; restrict by role with `@Roles(...)`; read the caller with `@CurrentAuth()`. Unsafe methods need the `X-CSRF-Token` header from the session response.
 - `packages/contracts` — Zod schemas and types shared by web and API. Build it before typechecking dependents (root scripts do this).
 - `prisma/` — schema and migrations. The Prisma 7 client is generated into `apps/api/src/generated/prisma` (gitignored) by `prisma generate`, which the API's `dev`/`build`/`typecheck` scripts run automatically.

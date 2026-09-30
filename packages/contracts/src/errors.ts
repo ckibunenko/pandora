@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const ERROR_CODES = {
+  skuAlreadyExists: "SKU_ALREADY_EXISTS",
   malformedRequest: "MALFORMED_REQUEST",
   validationFailed: "VALIDATION_FAILED",
   unauthenticated: "UNAUTHENTICATED",

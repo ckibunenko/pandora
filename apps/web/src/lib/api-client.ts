@@ -34,7 +34,7 @@ export function setCsrfToken(token: string | null): void {
 }
 
 interface RequestOptions<T> {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: unknown;
   parse: (body: unknown) => T;
   acceptedErrorStatuses?: readonly number[];
@@ -50,7 +50,7 @@ async function toApiError(response: Response): Promise<ApiError> {
   return new ApiError(response.status, "UNEXPECTED_RESPONSE", `Request failed with status ${response.status}.`, undefined);
 }
 
-async function request<T>(path: string, { method = "GET", body, parse, acceptedErrorStatuses = [] }: RequestOptions<T>): Promise<T> {
+export async function request<T>(path: string, { method = "GET", body, parse, acceptedErrorStatuses = [] }: RequestOptions<T>): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (body !== undefined) {
     headers["Content-Type"] = "application/json";

@@ -1,7 +1,7 @@
 # Pandora — Project Overview
 
 > **Revision:** 2026-09-29  
-> **Status:** Consolidated target MVP design; implementation pending  
+> **Status:** MVP in progress; authentication and catalog implemented
 > **Purpose:** Persistent product context for contributors and coding agents
 
 Pandora is a B2B order and inventory management sandbox for a fictional board-game distributor serving retail stores. It showcases Aleksandar Parabucki's Senior QA skills through a working application, explicit business rules, automated testing, reproducible defects, and evidence-based quality ownership.
@@ -20,7 +20,7 @@ This overview defines the product baseline, target boundaries, and cross-cutting
 
 ## 2. Current implementation versus target architecture
 
-**Observed repository baseline on 2026-09-29:** the original Next.js starter has been replaced by the target stack as a pnpm workspace skeleton: `apps/web` (React/Vite), `apps/api` (NestJS), `packages/contracts`, `prisma/`, and Docker Compose with PostgreSQL. It contains health checks and authentication (organizations, users, server-side sessions, role and CSRF guards, seeded demo accounts); no catalog, inventory, or order features yet. `AGENTS.md` describes the current commands and layout.
+**Observed repository baseline on 2026-09-30:** the original Next.js starter has been replaced by the target stack as a pnpm workspace skeleton: `apps/web` (React/Vite), `apps/api` (NestJS), `packages/contracts`, `prisma/`, and Docker Compose with PostgreSQL. It contains health checks and authentication (organizations, users, server-side sessions, role and CSRF guards, seeded demo accounts); catalog browsing and administrator management with language/edition variants, EUR prices, and essential transactional audit are implemented; inventory and order features remain planned. `AGENTS.md` describes the current commands and layout.
 
 **Target design inherited from the planning documents:** React/Vite frontend, NestJS backend, PostgreSQL, and Prisma. The skeleton follows this design; the parts listed below that are not yet built remain planned, not implemented.
 
@@ -55,7 +55,7 @@ flowchart TB
     Worker -.-> Logs
 ```
 
-The backend modules share one database. A business mutation and its audit, stock movements, and applicable outbox job commit together; notification delivery happens afterward. This diagram represents the target design; the worker, Mailpit, sessions, and business modules are not built yet.
+The backend modules share one database. A business mutation and its audit, stock movements, and applicable outbox job commit together; notification delivery happens afterward. This diagram represents the target design; sessions and catalog are implemented; the worker, Mailpit, inventory, and order workflows remain planned.
 
 Keep `AGENTS.md`, commands, and implementation documentation in sync as the architecture grows. Use actual repository scripts for existing code.
 
@@ -261,4 +261,4 @@ Keep this overview stable and concise. Put detailed data modeling in a separate 
 
 The `context/` directory contains this overview, `coding-standards.md`, `ai-interaction.md`, and `current-feature.md`, all referenced from `AGENTS.md`. The previously mentioned phase specifications do not exist yet; do not treat them as available context.
 
-Remaining decisions: finalize catalog titles/size, currency, and seed fixtures; define detailed endpoint/data contracts and operational diagnostic permissions; settle test/CI ownership; select hosting, scheduler, resource limits/costs, public URL, and HTTPS configuration. These decisions must preserve the confirmed fictional domain, QA purpose, and prohibition on AI features and mandatory paid integrations.
+Catalog defaults are now EUR, eight fictional products, and eleven variants; see `current-feature.md`. Remaining decisions: expand lifecycle seed fixtures; define detailed endpoint/data contracts and operational diagnostic permissions; settle test/CI ownership; select hosting, scheduler, resource limits/costs, public URL, and HTTPS configuration. These decisions must preserve the confirmed fictional domain, QA purpose, and prohibition on AI features and mandatory paid integrations.

@@ -64,3 +64,60 @@ model Session {
   @@index([userId])
   @@map("sessions")
 }
+
+
+enum ProductType {
+  BASE_GAME
+  EXPANSION
+}
+
+model Product {
+  id            String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name          String           @db.VarChar(120)
+  publisher     String           @db.VarChar(120)
+  description   String           @db.VarChar(2000)
+  type          ProductType
+  baseProductId String?          @map("base_product_id") @db.Uuid
+  baseProduct   Product?         @relation("Expansions", fields: [baseProductId], references: [id], onDelete: Restrict)
+  expansions    Product[]        @relation("Expansions")
+  isActive      Boolean          @default(true) @map("is_active")
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+  variants      ProductVariant[]
+
+  @@index([name, id])
+  @@index([baseProductId])
+  @@map("products")
+}
+
+model ProductVariant {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  product        Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  sku            String   @unique @db.VarChar(40)
+  language       String   @db.VarChar(2)
+  edition        String   @db.VarChar(80)
+  unitPriceMinor Int      @map("unit_price_minor")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([productId, sku])
+  @@map("product_variants")
+}
+
+model AuditEvent {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  actorId        String   @map("actor_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  entityType     String   @map("entity_type")
+  entityId       String   @map("entity_id") @db.Uuid
+  action         String
+  occurredAt     DateTime @map("occurred_at") @db.Timestamptz(3)
+  correlationId  String   @map("correlation_id") @db.VarChar(64)
+  before         Json?
+  after          Json
+
+  @@index([entityType, entityId, occurredAt])
+  @@map("audit_events")
+}

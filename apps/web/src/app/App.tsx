@@ -6,6 +6,14 @@ import { HomePage } from "../routes/HomePage";
 import { LoginPage } from "../routes/LoginPage";
 import { AppShell } from "./AppShell";
 
+import {
+  CatalogLayout,
+  RequireCatalogAdmin,
+} from "../features/catalog/CatalogLayout";
+import { CatalogPage } from "../features/catalog/CatalogPage";
+import { ProductPage } from "../features/catalog/ProductPage";
+import { AdminProductPage } from "../features/catalog/AdminProductPage";
+
 const queryClient = new QueryClient({
   defaultOptions: {
     mutations: { retry: false },
@@ -19,7 +27,30 @@ const router = createBrowserRouter([
       { path: "/login", element: <LoginPage /> },
       {
         element: <RequireAuth />,
-        children: [{ path: "/", element: <HomePage /> }],
+        children: [
+          { path: "/", element: <HomePage /> },
+          {
+            element: <CatalogLayout />,
+            children: [
+              { path: "/catalog", element: <CatalogPage /> },
+              { path: "/catalog/:productId", element: <ProductPage /> },
+              {
+                element: <RequireCatalogAdmin />,
+                children: [
+                  { path: "/admin/catalog", element: <CatalogPage admin /> },
+                  {
+                    path: "/admin/catalog/new",
+                    element: <AdminProductPage create />,
+                  },
+                  {
+                    path: "/admin/catalog/:productId",
+                    element: <AdminProductPage />,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
       },
     ],
   },

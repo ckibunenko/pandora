@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { Link, Navigate, useNavigate } from "react-router";
 import { roleLabel, useSession } from "../features/auth/session";
 import { logout } from "../lib/api-client";
 import styles from "./HomePage.module.css";
@@ -23,10 +23,13 @@ export function HomePage() {
     return null;
   }
   const { user } = session.data;
+  if (user.role === "retailer") return <Navigate to="/catalog" replace />;
+  if (user.role === "administrator") return <Navigate to="/admin/catalog" replace />;
 
   return (
     <main className={styles.page}>
       <h1>Pandora</h1>
+      <Link to="/catalog" data-test="catalog-nav">Browse catalog</Link>
       <section className={styles.account} aria-label="Signed-in account">
         <p data-test="current-user">
           Signed in as <strong>{user.displayName}</strong> ({user.email})

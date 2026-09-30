@@ -4,6 +4,8 @@ import { databaseUrlSchema, InvalidConfigError, parseEnv } from "../common/confi
 import { PrismaClient, type OrganizationType, type UserRole } from "../generated/prisma/client.js";
 import { PasswordHasher } from "../modules/auth/password-hasher.js";
 
+import { seedCatalog } from "./catalog-seed.js";
+
 const seedEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test"], { error: "seeding only runs when NODE_ENV is development or test" }),
   DATABASE_URL: databaseUrlSchema,
@@ -55,6 +57,7 @@ async function seed(): Promise<void> {
 
   try {
     await prisma.$transaction(async (tx) => {
+      await seedCatalog(tx);
       for (const { id, ...organization } of ORGANIZATIONS) {
         await tx.organization.upsert({ where: { id }, create: { id, ...organization }, update: organization });
       }
@@ -63,7 +66,7 @@ async function seed(): Promise<void> {
         await tx.user.upsert({ where: { id }, create: { id, ...data }, update: data });
       }
     });
-    console.log(`Seeded ${ORGANIZATIONS.length} organizations and ${USERS.length} users.`);
+    console.log(`Seeded ${ORGANIZATIONS.length} organizations and ${USERS.length} users; 8 catalog products and 11 variants.`);
   } finally {
     await prisma.$disconnect();
   }
