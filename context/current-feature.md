@@ -1,52 +1,82 @@
 ## Current Feature
 
-Minimal UI polish: original cover art for every catalog product, a calmer product page, a branded sign-in page, and subtle card depth, within the visual direction of overview §8 (warm off-white, terracotta, serif headings, original fictional artwork).
+Line-level cancellation requests (Phase 2). After confirmation, a retailer chooses which lines and how many unshipped units to cancel, instead of always cancelling everything that remains. Staff still approve the whole request or reject it with a reason (overview §6).
 
 ## Status
 
-Completed — merged to `main` as `bf6f472` (2026-10-01) through PR #4; CI run `36819845588` passed all 3 jobs and 14 suites.
+In progress on `feature/line-cancellation`.
 
-## Scope and decisions (2026-09-30)
+## Goal
 
-- Branch: `feature/ui-polish`. The user asked for a *minimal* polish, so this stays within the documented visual direction and needs no design choice between alternatives.
-- **Cover art** (`apps/web/src/features/catalog/ProductCover.tsx`):
-  - Abstract SVG art is generated deterministically from the product ID, so it is original and fictional, has no external assets, and each product always gets the same cover.
-  - There are five warm palettes and four motifs: sunrise, hex tiles, tokens, peaks. Expansions carry a ribbon.
-  - The title and publisher sit on light plates, so they stay readable on any motif.
-  - The cover stays `aria-hidden`; the link keeps its accessible name.
-- **Cards:** rounded covers with a soft shadow that lift slightly on hover and keyboard focus. The global reduced-motion rule disables the transition.
-- **Product page:** the cover is capped at 480 px, so it no longer dominates the page at desktop width.
-- **Sign-in page:** a wordmark and one-line tagline above the form, with a terracotta top border and a soft shadow on the card.
+A retailer can cancel part of a confirmed or partially shipped order and keep the rest coming. Approving such a request releases only the requested reservations and leaves the remainder open for shipment. Stock, reservations, movements, audit, and the derived order status stay consistent.
+
+## Scope and decisions (2026-10-01)
+
+- Branch: `feature/line-cancellation`.
+- **Request body:** `POST /api/orders/:orderId/cancellation-requests` accepts an optional `items[{orderLineId, quantity}]`.
+  - With `items`, the request covers exactly those quantities. Each line may appear only once, each quantity is a whole number from 1 to 10,000, and at least one item is required.
+  - Without `items`, the request covers every outstanding unit, as in Phase 1. Existing clients and checks keep working.
+- **No partial approval** (overview §6): staff approve or reject the whole request. Approval rechecks every item against the current outstanding quantity and returns 409 `CANCELLATION_CONFLICT` with no effect if any item no longer fits.
+- **New error code `CANCELLATION_QUANTITY_EXCEEDED`** (409): a requested quantity is above the line's outstanding quantity when the request is made. It mirrors `SHIPMENT_QUANTITY_EXCEEDED`, with `lines.<SKU>` details.
+- **Order status after approval** is derived from the quantities as before. Cancelling only some units leaves the order `confirmed` (nothing shipped) or `partially_shipped`. Shipping the remainder later ends in `closed_partial`. Cancellation data on the order (`cancelledAt`, `cancelledBy`, reason) is set only when every unit ends up cancelled.
 - **Unchanged:**
-  - every `data-test` selector and the selector contract;
-  - all behavior and API contracts;
-  - every other page.
-- **Out of scope** (follow-up if wanted): shared UI primitives, restyling staff tables and forms, dark mode, and custom illustrations per game.
+  - one pending request per order; a pending request releases nothing and shipping may continue;
+  - the database schema (no migration needed: items, quantities, the one-pending index, and status derivation already support this);
+  - audit actions and the Bug Lab;
+  - the seed.
+- **Out of scope:** partial approval, editing or withdrawing a pending request, returns, notifications.
+
+## Consistency rules
+
+- Idempotency-Key, current order `version`, Serializable transaction with bounded retry, atomic audit, and a version bump, as for every fulfillment mutation.
+- **Order of checks for a request:**
+  1. 404 (also another organization's order).
+  2. `INVALID_ORDER_TRANSITION` (not `confirmed`/`partially_shipped`).
+  3. `VERSION_CONFLICT`.
+  4. 422 for invalid input, including unknown lines and lines of another order.
+  5. `CANCELLATION_REQUEST_PENDING`, then `CANCELLATION_QUANTITY_EXCEEDED`.
+- A rejected request changes nothing except the request itself and the order version.
+
+## Audit
+
+`cancellation_requested` records the requested quantity per SKU (as before) and now also `scope`: `selected` or `all_remaining`. `cancellation_approved` keeps recording the released quantity per SKU.
+
+## UI acceptance criteria
+
+- **Retailer**, on a `confirmed` or `partially_shipped` order with no pending request:
+  - **Request cancellation** opens a panel with one quantity field per line that still has outstanding units, labelled with SKU, product, and outstanding quantity.
+  - Fields default to 0, so the retailer chooses what to cancel; **Cancel all remaining** fills every field with its outstanding quantity.
+  - Client-side validation per field (0 to outstanding) and at least one unit overall, with errors associated with their fields.
+  - The submit button names the total, for example "Send request to cancel 2 units".
+  - Optional reason; **Keep order** closes the panel.
+- **Staff:** the review panel lists the requested quantities and says that approval releases only those units; the rest stays open for shipment.
+- After a partial approval the order stays open: the fulfillment table shows the cancelled units, the shipment form defaults to the new outstanding quantities, and the retailer may request again.
+- Selectors: `cancellation-request-line` (with `data-sku`), `cancellation-request-quantity`, `cancellation-request-all`. Existing selectors are unchanged.
+- Keyboard access and a narrow layout (390 px) without horizontal overflow.
 
 ## Verification
 
-- `pnpm check:all` passes.
-- A manual CDP check on the development stack:
-  - no horizontal overflow on the catalog and product pages at 390 px and 360 px, or on the sign-in page at 390 px;
-  - all 7 visible covers render an SVG;
-  - Tab reaches a cover link with a visible 3 px focus outline;
-  - no page errors.
-- Before and after screenshots inspected: catalog, product page, sign-in page, and narrow catalog.
-- `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `git diff --check` pass.
+- **API/PostgreSQL** (added to `apps/api/checks/fulfillment.mjs`):
+  - Validation without effects: empty `items`, unknown or foreign lines, duplicate lines, zero, negative, and fractional quantities return 422; a quantity above outstanding returns 409 `CANCELLATION_QUANTITY_EXCEEDED` with `lines.<SKU>` details.
+  - A selected request on a two-line order: approval releases only the requested units, the order stays `confirmed`, a later full shipment of the rest ends `closed_partial`.
+  - On a partially shipped order: cancel part of one line, approve, status stays `partially_shipped`, and a second request is possible.
+  - A shipment after a selected request that leaves less than requested makes approval return `CANCELLATION_CONFLICT` with no effect.
+  - Omitting `items` still requests every outstanding unit (Phase 1 behavior).
+  - Replay returns the same response; audit `scope` is recorded; invariants (movement sums, reservations, line totals) hold.
+- **Browser** (added to `apps/web/checks/fulfillment-browser.mjs`): the retailer requests part of an order, client-side validation flags an over-quantity, staff approve, the order stays open with the new outstanding quantity; keyboard and 390 px layout.
+- All existing checks pass; `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm check:all`.
 
-## Implementation results (2026-09-30)
+## Implementation results (2026-10-01)
 
-- Full `pnpm check:all` (run `20260930_203602`): 14 of 14 passed.
-- **Manual checks:**
-  - no overflow at 390 and 360 px;
-  - 7 of 7 covers render;
-  - keyboard focus visible (`:focus-visible`, 3 px solid);
-  - 0 page errors.
-- The Playwright catalog browser check is still not part of `check:all` (external dependency). The catalog layout was covered by the manual checks above.
+- Implemented as specified; no migration, no seed change, and no Bug Lab change.
+- **API/PostgreSQL:** fulfillment 14 of 14 (3 new groups: validation without effects, selected request with partial release then `closed_partial`, partial approval on a partially shipped order with an overtaken request and the omitted-`items` fallback).
+- **Browser:** fulfillment 10 of 10. The PO-000008 flow now goes partial request (empty and over-quantity flagged) → approval leaves it `partially_shipped` → **Cancel all remaining** by keyboard and at 390 px → approval closes it `closed_partial`, so later groups see the same final state as before.
+- **Full `pnpm check:all`** (run `20261001_054523`): 14 of 14 suites passed, including the build. `pnpm typecheck` and `pnpm lint` pass.
+- Screenshots of the narrow request form and the closed order with two approved partial requests were inspected.
 
 ## Previous feature
 
-[Bug Lab](features/bug-lab.md) is merged as `277925e`; [verification](features/bug-lab-verification.md). Earlier: [sign-in hardening](features/auth-hardening.md), [CI](features/ci.md), [demo reset](features/demo-reset.md), [administration](features/admin-management.md), [fulfillment](features/fulfillment.md), [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth](features/auth-sessions.md). Remaining Phase 2: line-level cancellation, audit search, operational lists.
+[Minimal UI polish](features/ui-polish.md) is merged as `bf6f472`. Earlier: [Bug Lab](features/bug-lab.md) ([verification](features/bug-lab-verification.md)), [sign-in hardening](features/auth-hardening.md), [CI](features/ci.md), [demo reset](features/demo-reset.md), [administration](features/admin-management.md), [fulfillment](features/fulfillment.md), [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth](features/auth-sessions.md). Remaining Phase 2 after this feature: audit search, operational lists.
 
 ## History
 
