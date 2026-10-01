@@ -4,7 +4,7 @@ Line-level cancellation requests (Phase 2). After confirmation, a retailer choos
 
 ## Status
 
-In progress on `feature/line-cancellation`.
+Completed — merged to `main` as `37bb2d4` (2026-10-01) through PR #5; CI run `36821755066` passed all 3 jobs.
 
 ## Goal
 
@@ -96,3 +96,4 @@ A retailer can cancel part of a confirmed or partially shipped order and keep th
 - Sign-in rate limiting and session cleanup (2026-09-30): at most 5 sign-in attempts per normalized email per 15 minutes (429 with `Retry-After`, identical for unknown accounts, digests only, per-email advisory lock so a parallel burst checks exactly 5). Automatic removal of sessions unusable for more than 24 hours. Demo reset also clears attempts. `check:all` gained the auth suites and a per-suite timeout. CI on PR #2 exposed immediate serialization retries colliding, so `runSerializable` now backs off with jitter. Final CI: 3 jobs and 13 suites passed; see [features/auth-hardening-verification.md](features/auth-hardening-verification.md). Merged to `main` as `c239416` + `a564c18`.
 - Bug Lab (2026-09-30, Phase 2): exactly one `BUG_LAB_DEFECT` (`BUG-001` persisted wrong fulfillment status, `BUG-002` off-by-one page offset, `BUG-003` current prices on frozen lines), refused in production, on non-`pandora_buglab…` databases, or on a marker mismatch. Includes `pnpm bug-lab setup|start` with scenario fixtures and run manifests, and a catalog, briefs, and solutions in `bug-lab/`. `check:bug-lab` 7/7: the same assertion passes on Standard and fails for the intended reason for each defect; locally `check:all` 14/14; CI green on PR #3; see [features/bug-lab-verification.md](features/bug-lab-verification.md). Merged to `main` as `277925e`.
 - Minimal UI polish (2026-10-01): original generated SVG cover art per product (deterministic from the product ID; five warm palettes, four motifs, expansion ribbon); catalog cards with depth and a hover/focus lift; product cover capped at 480 px; branded sign-in page. No selector, behavior, or API changes. `check:all` 14/14; manual checks at 390 and 360 px, keyboard focus, no page errors; CI green on PR #4. Merged to `main` as `bf6f472`.
+- Line-level cancellation requests (2026-10-01, Phase 2): retailers choose which lines and how many unshipped units to cancel (optional `items`; omitted still means everything outstanding), with the new 409 `CANCELLATION_QUANTITY_EXCEEDED`; staff still approve or reject the whole request, and a partial approval keeps the order open. No migration or seed change; audit records `scope`. Fulfillment checks 14/14 API and 10/10 browser; `check:all` 14/14; CI green on PR #5. Merged to `main` as `37bb2d4`.
