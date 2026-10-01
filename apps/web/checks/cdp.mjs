@@ -8,7 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 export { sleep };
 
-export async function startBrowser({ base, evidence, port }) {
+export async function startBrowser({ base, evidence, port, ignoreCertificateErrors = false }) {
   const chromePath = process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
   mkdirSync(evidence, { recursive: true });
   const chrome = spawn(
@@ -19,6 +19,8 @@ export async function startBrowser({ base, evidence, port }) {
       "--no-first-run",
       // GitHub's Ubuntu runners block the unprivileged namespaces Chrome's sandbox needs.
       ...(process.env.CI === "true" ? ["--no-sandbox"] : []),
+      // Only for checks against a local stack whose certificate comes from a private CA (e.g. Caddy's internal CA).
+      ...(ignoreCertificateErrors ? ["--ignore-certificate-errors"] : []),
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${mkdtempSync(join(tmpdir(), "pandora-cdp-"))}`,
       "about:blank",

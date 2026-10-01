@@ -1,0 +1,12 @@
+# Daily reset at 03:00 Europe/Belgrade (overview §9), regardless of the server's own time zone.
+[Unit]
+Description=Daily Pandora demo reset at 03:00 Europe/Belgrade
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Europe/Belgrade
+# A reset missed while the server was down runs at the next boot.
+Persistent=true
+Unit=pandora-demo-reset.service
+
+[Install]
+WantedBy=timers.target

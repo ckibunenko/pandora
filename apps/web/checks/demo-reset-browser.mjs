@@ -7,7 +7,12 @@ import { startBrowser, checkRunner } from "./cdp.mjs";
 const project = process.env.DEMO_COMPOSE_PROJECT;
 assert.match(project ?? "", /^pandora-demo-qa-[a-z0-9-]+$/);
 const root = fileURLToPath(new URL("../../../", import.meta.url));
-const base = `http://127.0.0.1:${process.env.DEMO_PORT}`;
+const httpPort = process.env.DEMO_PORT ?? "5180";
+const httpsPort = process.env.DEMO_HTTPS_PORT ?? "5443";
+const base = `https://localhost:${httpsPort}`;
+const inbox = `${base}/mail/api/v1`;
+// The QA stack serves HTTPS with Caddy's internal (private) CA; trust it only inside this check process and browser.
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 const evidence = process.env.DEMO_CHECK_EVIDENCE ?? "/tmp/pandora-demo-reset-evidence";
 const runner = checkRunner();
 
@@ -28,20 +33,57 @@ async function sql(statement) {
   return result.output.trim();
 }
 const reset = () => run(process.execPath, ["--env-file=.env.demo", "scripts/demo-reset.mjs"]);
-const page = await startBrowser({ base, evidence, port: 9346 });
+const page = await startBrowser({ base, evidence, port: 9346, ignoreCertificateErrors: true });
+
+const inboxMessages = async () => (await (await fetch(`${inbox}/messages`)).json()).messages;
+async function waitForInbox(count) {
+  let messages = [];
+  for (let i = 0; i < 60 && messages.length < count; i += 1) {
+    messages = await inboxMessages();
+    if (messages.length < count) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return messages;
+}
+/** The retailer submits the seeded draft PO-000001, which notifies both staff members. */
+async function submitSeedDraft() {
+  const signIn = await fetch(`${base}/api/auth/login`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "retailer@tabletop-lantern.test", password: process.env.DEMO_USER_PASSWORD }),
+  });
+  assert.equal(signIn.status, 200);
+  const retailer = { cookie: signIn.headers.get("set-cookie").split(";")[0], csrf: (await signIn.json()).csrfToken };
+  const headers = { Cookie: retailer.cookie, "X-CSRF-Token": retailer.csrf, "Content-Type": "application/json" };
+  const draftId = await sql("SELECT id FROM orders WHERE number = 'PO-000001'");
+  const draft = await (await fetch(`${base}/api/orders/${draftId}`, { headers })).json();
+  const submitted = await fetch(`${base}/api/orders/${draftId}/submit`, {
+    method: "POST", headers: { ...headers, "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ version: draft.version, reviewedPrices: draft.lines.map((l) => ({ variantId: l.variantId, unitPriceMinor: l.unitPriceMinor })) }),
+  });
+  assert.equal(submitted.status, 200);
+}
 let actor;
 let injected = false;
 try {
-  await runner.check("isolated stack exposes only the web port and the loopback inbox UI; the worker runs; retailer can sign in", async () => {
+  await runner.check("only Caddy is published on loopback; HTTP redirects to HTTPS; security headers; the worker runs; retailer can sign in", async () => {
     const result = await compose("ps", "--format", "json");
     assert.equal(result.code, 0);
     const services = result.output.trim().split("\n").map((line) => JSON.parse(line));
-    for (const service of services.filter((item) => item.Service !== "web" && item.Service !== "mailpit")) {
-      assert.ok((service.Publishers ?? []).every((port) => !port.PublishedPort));
+    for (const service of services.filter((item) => item.Service !== "caddy")) {
+      assert.ok((service.Publishers ?? []).every((port) => !port.PublishedPort), `${service.Service} must not be published`);
     }
-    const inbox = services.find((item) => item.Service === "mailpit");
-    assert.ok(inbox?.Publishers.filter((port) => port.PublishedPort).every((port) => port.URL === "127.0.0.1" && port.TargetPort === 8025));
+    const published = services.find((item) => item.Service === "caddy").Publishers.filter((port) => port.PublishedPort);
+    assert.ok(published.every((port) => port.URL === "127.0.0.1"));
+    assert.deepEqual([...new Set(published.map((port) => String(port.PublishedPort)))].sort(), [httpPort, httpsPort].sort());
     assert.equal(services.find((item) => item.Service === "worker")?.State, "running");
+    const redirect = await fetch(`http://localhost:${httpPort}/catalog`, { redirect: "manual" });
+    assert.equal(redirect.status, 308);
+    assert.equal(redirect.headers.get("location"), `https://localhost:${httpsPort}/catalog`);
+    const home = await fetch(base);
+    assert.equal(home.status, 200);
+    assert.deepEqual(
+      ["x-content-type-options", "referrer-policy", "x-frame-options", "strict-transport-security", "server"].map((name) => home.headers.get(name)),
+      ["nosniff", "no-referrer", "DENY", "max-age=0", null],
+    );
     await page.login("retailer@tabletop-lantern.test", process.env.DEMO_USER_PASSWORD);
     await page.screenshot("catalog-before-reset");
     const response = await fetch(`${base}/api/auth/login`, {
@@ -49,9 +91,27 @@ try {
       body: JSON.stringify({ email: "admin@pandora.test", password: process.env.DEMO_USER_PASSWORD }),
     });
     assert.equal(response.status, 200);
+    assert.match(response.headers.get("set-cookie"), /; Secure/);
+    assert.match(response.headers.get("set-cookie"), /; HttpOnly/);
+    assert.match(response.headers.get("set-cookie"), /; SameSite=Lax/);
     actor = { cookie: response.headers.get("set-cookie").split(";")[0], csrf: (await response.json()).csrfToken };
     const created = await fetch(`${base}/api/admin/organizations`, { method: "POST", headers: { Cookie: actor.cookie, "X-CSRF-Token": actor.csrf, "Content-Type": "application/json" }, body: JSON.stringify({ name: "Reset Browser Temporary Store" }) });
     assert.equal(created.status, 201);
+  });
+  await runner.check("the public inbox at /mail/ shows delivered emails and refuses every change", async () => {
+    await submitSeedDraft();
+    const messages = await waitForInbox(2);
+    assert.deepEqual(messages.map((message) => message.To[0].Address).sort(), ["admin@pandora.test", "operator@pandora.test"]);
+    assert.equal((await fetch(`${base}/mail/`)).status, 200);
+    for (const [method, path] of [["DELETE", "/messages"], ["PUT", "/messages"], ["POST", "/send"], ["DELETE", `/message/${messages[0].ID}`]]) {
+      const refused = await fetch(`${inbox}${path}`, { method, headers: { "Content-Type": "application/json" }, body: method === "DELETE" ? undefined : "{}" });
+      assert.equal(refused.status, 405, `${method} ${path}`);
+      assert.equal(await refused.text(), "The demo inbox is read-only.");
+    }
+    assert.equal((await inboxMessages()).length, 2, "nothing was deleted");
+    await page.navigate("/mail/");
+    await page.waitFor(`document.body.innerText.includes("PO-000001 submitted by Tabletop Lantern")`, "inbox UI lists the email");
+    await page.screenshot("public-inbox");
   });
   await runner.check("an existing operator lock rejects another reset without interrupting the API", async () => {
     assert.equal((await compose("exec", "-T", "web", "mkdir", "/maintenance/reset-lock")).code, 0);
@@ -101,27 +161,10 @@ try {
     assert.equal(await sql("SELECT count(*) FROM orders"), "9");
     assert.equal(await sql("SELECT count(*) FROM notification_jobs"), "0");
     assert.equal((await compose("ps", "--status", "running", "-q", "worker")).output.trim() !== "", true, "worker restarted");
-    // A business event after the reset reaches the demo's own captured inbox through the restarted worker.
-    const inbox = `http://127.0.0.1:${process.env.DEMO_MAIL_PORT}/api/v1`;
-    await fetch(`${inbox}/messages`, { method: "DELETE" });
-    const signIn = await fetch(`${base}/api/auth/login`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "retailer@tabletop-lantern.test", password: process.env.DEMO_USER_PASSWORD }),
-    });
-    const retailer = { cookie: signIn.headers.get("set-cookie").split(";")[0], csrf: (await signIn.json()).csrfToken };
-    const headers = { Cookie: retailer.cookie, "X-CSRF-Token": retailer.csrf, "Content-Type": "application/json" };
-    const draftId = await sql("SELECT id FROM orders WHERE number = 'PO-000001'");
-    const draft = await (await fetch(`${base}/api/orders/${draftId}`, { headers })).json();
-    const submitted = await fetch(`${base}/api/orders/${draftId}/submit`, {
-      method: "POST", headers: { ...headers, "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({ version: draft.version, reviewedPrices: draft.lines.map((l) => ({ variantId: l.variantId, unitPriceMinor: l.unitPriceMinor })) }),
-    });
-    assert.equal(submitted.status, 200);
-    let delivered = [];
-    for (let i = 0; i < 60 && delivered.length < 2; i += 1) {
-      delivered = (await (await fetch(`${inbox}/messages`)).json()).messages;
-      if (delivered.length < 2) await new Promise((resolve) => setTimeout(resolve, 500));
-    }
+    // The reset empties the inbox too; a business event afterwards reaches it through the restarted worker.
+    assert.equal((await inboxMessages()).length, 0, "emails about removed orders are gone");
+    await submitSeedDraft();
+    const delivered = await waitForInbox(2);
     assert.deepEqual(delivered.map((message) => message.To[0].Address).sort(), ["admin@pandora.test", "operator@pandora.test"]);
     assert.ok(delivered.every((message) => message.Subject === "PO-000001 submitted by Tabletop Lantern"));
     await page.setWidth(1280);

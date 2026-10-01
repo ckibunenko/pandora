@@ -2,7 +2,7 @@
 
 ## Implemented scope
 
-`compose.demo.yml` defines a disposable, local Standard-mode demo. It has its own PostgreSQL volume/network, a production-built API, and a static web/reverse proxy. Only `127.0.0.1:5180` is published by default; neither the API nor PostgreSQL has a host port. Development continues to use `docker-compose.yml` and `.env` unchanged.
+`compose.demo.yml` defines a disposable, local Standard-mode demo. It has its own PostgreSQL volume/network, a production-built API, the notification worker, a captured inbox (Mailpit), a static web/reverse proxy, and a Caddy HTTPS entry point. Only Caddy is published, by default on `127.0.0.1:5180` (HTTP, redirects) and `127.0.0.1:5443` (HTTPS with Caddy's internal CA); nothing else has a host port. Development continues to use `docker-compose.yml` and `.env` unchanged.
 
 The CLI is operator tooling, not an application endpoint. Business administrators cannot invoke it. It deletes demo changes, sessions, and idempotency receipts and restores the existing fixture set: four organizations, six users, eight products, eleven variants, and nine orders, including a shipment and a pending cancellation request. New order/shipment numbers restart at 1001.
 
@@ -17,9 +17,9 @@ pnpm demo:build
 pnpm demo:reset
 ```
 
-Open http://localhost:5180 and use a seeded account with `DEMO_USER_PASSWORD`. The reset command initializes a new demo as well as restoring an existing one. **Every successful reset discards all changes made in this demo.** It does not reset or reseed development.
+Open https://localhost:5443 (accept or trust Caddy's local certificate) and use a seeded account with `DEMO_USER_PASSWORD`. The read-only captured inbox is at https://localhost:5443/mail/. The reset command initializes a new demo as well as restoring an existing one. **Every successful reset discards all changes made in this demo.** It does not reset or reseed development.
 
-`DEMO_DB_PASSWORD` must be 12–128 URL-safe letters, digits, underscores, or hyphens; `DEMO_USER_PASSWORD` must be 12–256 characters. `DEMO_PORT` changes the loopback port. The database name and internal host are fixed to `postgres/pandora_demo`. Do not change database credentials after initialization without a separate credential migration.
+`DEMO_DB_PASSWORD` must be 12–128 URL-safe letters, digits, underscores, or hyphens; `DEMO_USER_PASSWORD` must be 12–256 characters. `DEMO_PORT` and `DEMO_HTTPS_PORT` change the loopback ports; for a public server see the [public demo runbook](public-demo-runbook.md). The database name and internal host are fixed to `postgres/pandora_demo`. Do not change database credentials after initialization without a separate credential migration.
 
 Rebuild before resetting after code or migration changes. Do not run builds and resets concurrently. The API image includes migration tooling; this is a local demo image, not a minimized public production deployment.
 
@@ -59,9 +59,9 @@ Do not manually clear the maintenance marker or start the API to bypass a failed
 
 ## Scheduling and deployment boundary
 
-The planned public-demo reset time remains **03:00 Europe/Belgrade daily**. A future deployment scheduler should invoke `pnpm demo:reset` from the repository root, with the correct Node/pnpm PATH, Docker access, and that named timezone. Select a scheduler with explicit timezone/DST support and retain the command's exit status/logs for failure alerting. No host cron job, public hosting, HTTPS, or scheduler was installed by this feature.
+The public-demo reset time is **03:00 Europe/Belgrade daily**. `deploy/demo/systemd/pandora-demo-reset.{service,timer}` run `scripts/demo-reset.mjs` with an `OnCalendar` time zone (DST-safe: 01:00 UTC in summer, 02:00 UTC in winter); installation is in the [public demo runbook](public-demo-runbook.md). No host or scheduler is installed yet; hosting is undecided.
 
-The current stack is loopback HTTP and uses non-Secure session cookies for that reason. A public deployment must add HTTPS and enable secure cookies. The notification worker is part of the stop/verify/start lifecycle: `demo:reset` stops the API and the worker, truncates `notification_jobs` and `notification_attempts` with the fixtures, and starts both again; the demo inbox (Mailpit) is at `http://localhost:${DEMO_MAIL_PORT:-5181}`. New persistence tables must be explicitly reviewed for truncation and restoration.
+The demo is served only over HTTPS (Caddy) and its session cookies are `Secure`. The notification worker is part of the stop/verify/start lifecycle: `demo:reset` stops the API and the worker, restarts Mailpit (its temporary database is discarded, so the inbox empties), truncates `notification_jobs` and `notification_attempts` with the fixtures, and starts both writers again. New persistence tables must be explicitly reviewed for truncation and restoration.
 
 ## Reproduce verification
 
@@ -75,8 +75,8 @@ DEMO_CHECK_DATABASE=pandora_demo_check_unique pnpm --filter @pandora/api check:d
 Lifecycle/browser checks require built demo images, `.env.demo`, local Chrome, and a disposable QA project. The script refuses the ordinary `pandora-demo` project:
 
 ```sh
-DEMO_COMPOSE_PROJECT=pandora-demo-qa-check DEMO_PORT=5186 pnpm demo:reset
-DEMO_COMPOSE_PROJECT=pandora-demo-qa-check DEMO_PORT=5186 node --env-file=.env.demo apps/web/checks/demo-reset-browser.mjs
+DEMO_COMPOSE_PROJECT=pandora-demo-qa-check DEMO_PORT=5186 DEMO_HTTPS_PORT=5446 pnpm demo:reset
+DEMO_COMPOSE_PROJECT=pandora-demo-qa-check DEMO_PORT=5186 DEMO_HTTPS_PORT=5446 node --env-file=.env.demo apps/web/checks/demo-reset-browser.mjs
 ```
 
 ## Results — 2026-09-30
@@ -98,3 +98,11 @@ The temporary `pandora-demo-qa-reset` containers were stopped after verification
   - a failed restore leaves both the API and the worker stopped;
   - after a successful retry, the notification tables are empty, the worker is running again, and a submitted order reaches the demo inbox for both staff recipients.
 - **Database: 6/6 groups**, now also asserting that queued notifications are cleared.
+
+## Results — 2026-10-01 (HTTPS entry point and public inbox)
+
+- **Lifecycle/browser: 6/6 groups** on `pandora-demo-qa-public` (HTTP 5186, HTTPS 5446, Caddy internal CA):
+  - only Caddy is published on loopback; HTTP returns 308 to HTTPS with the port; security headers are present; the session cookie is `Secure; HttpOnly; SameSite=Lax`;
+  - the public inbox at `/mail/` lists delivered emails and refuses DELETE, PUT, and POST with 405, and nothing is deleted;
+  - the lock, failure, maintenance, and retry lifecycle still passes, the inbox is empty after the reset, and a new event reaches it.
+- The first run showed DELETE succeeding: a top-level `respond` ran after `handle`. The refusal now lives inside the `/mail*` handle block.

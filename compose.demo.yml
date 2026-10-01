@@ -11,7 +11,8 @@ x-api: &api
     DATABASE_URL: postgresql://pandora_demo:${DEMO_DB_PASSWORD:?set in .env.demo}@postgres:5432/pandora_demo?schema=public
     API_PORT: 3000
     CATALOG_CURRENCY: EUR
-    SESSION_COOKIE_SECURE: "false"
+    # The demo is served only over HTTPS (Caddy), so session cookies are Secure.
+    SESSION_COOKIE_SECURE: "true"
     SEED_USER_PASSWORD: ${DEMO_USER_PASSWORD:?set in .env.demo}
   init: true
 
@@ -49,10 +50,13 @@ services:
     command: ["node", "dist/worker.js"]
     stop_grace_period: 30s
 
+  # Captured inbox, published read-only at /mail/ through Caddy.
   mailpit:
     image: axllent/mailpit:v1.31.3
-    ports:
-      - "127.0.0.1:${DEMO_MAIL_PORT:-5181}:8025"
+    environment:
+      MP_WEBROOT: /mail/
+      MP_DISABLE_VERSION_CHECK: "true"
+      MP_BLOCK_REMOTE_CSS_AND_FONTS: "true"
 
   reset:
     <<: *api
@@ -70,11 +74,29 @@ services:
       context: .
       dockerfile: deploy/demo/Dockerfile
       target: web
-    ports:
-      - "127.0.0.1:${DEMO_PORT:-5180}:8080"
     volumes:
       - demo-maintenance:/maintenance
+
+  # The only published service: HTTP redirects to HTTPS; container ports equal host ports so redirects keep them.
+  caddy:
+    image: caddy:2.11.4-alpine
+    environment:
+      DEMO_DOMAIN: ${DEMO_DOMAIN:-localhost}
+      DEMO_TLS: ${DEMO_TLS:-internal}
+      DEMO_HSTS: ${DEMO_HSTS:-max-age=0}
+      DEMO_PORT: ${DEMO_PORT:-5180}
+      DEMO_HTTPS_PORT: ${DEMO_HTTPS_PORT:-5443}
+    ports:
+      - "${DEMO_BIND:-127.0.0.1}:${DEMO_PORT:-5180}:${DEMO_PORT:-5180}"
+      - "${DEMO_BIND:-127.0.0.1}:${DEMO_HTTPS_PORT:-5443}:${DEMO_HTTPS_PORT:-5443}"
+    volumes:
+      - ./deploy/demo/Caddyfile:/etc/caddy/Caddyfile:ro
+      - demo-caddy-data:/data
+      - demo-caddy-config:/config
+    depends_on: [web, mailpit]
 
 volumes:
   demo-data:
   demo-maintenance:
+  demo-caddy-data:
+  demo-caddy-config:
