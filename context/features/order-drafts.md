@@ -125,7 +125,7 @@ New orders are numbered from `PO-001001`, so they never collide with seed number
   - `PRICE_CHANGED` when a reviewed price differs; an empty draft returns 422.
   - Replaying the same key returns the same response. After submission, lines cannot change: the API returns `INVALID_ORDER_TRANSITION`, and direct SQL is rejected by the trigger.
 - **Cancellation:** from draft and from submitted; `INVALID_ORDER_TRANSITION` when already cancelled; attributed to the actor.
-- **Concurrency:** two parallel saves with the same version produce one success and one `VERSION_CONFLICT`.
+- **Concurrency:** two parallel saves with the same version produce exactly one success. The loser returns 409 `VERSION_CONFLICT`, or `CONCURRENT_MODIFICATION` if the shared three-attempt Serializable retry budget is exhausted. Retrying the stale version after the race returns `VERSION_CONFLICT`; neither failed request overwrites the winner or adds audit. This clarification (2026-10-01, PR #6) aligns the feature criterion with the overview's bounded-retry contract; no API behavior changes.
 - **Rollback:** an injected audit failure leaves no change and no idempotency record.
 - **Stock:** no reservation or inventory movement is created by any order action.
 - **Seed:** rerunning it creates nothing new.
@@ -145,4 +145,3 @@ New orders are numbered from `PO-001001`, so they never collide with seed number
   - The browser checks share a small Chrome driver, `apps/web/checks/cdp.mjs`, which the inventory browser script now uses too.
   - The API client supports `PUT`.
 - The migration is named `20260930140000_order_drafts` so it runs after inventory on fresh databases.
-
