@@ -21,6 +21,7 @@ export function CatalogLayout() {
   const { user } = session.data;
   return (
     <>
+      <a className={styles.skipLink} href="#main-content">Skip to content</a>
       <header className={styles.header}>
         <NavLink to="/" className={styles.brand ?? ""}>
           Pandora<span>GAME DISTRIBUTION</span>
@@ -81,7 +82,7 @@ export function CatalogLayout() {
           </button>
         </div>
       </header>
-      <main className={styles.page}>
+      <main className={styles.page} id="main-content" tabIndex={-1}>
         <Outlet />
       </main>
     </>

@@ -63,7 +63,7 @@ function MovementHistory({ variantId }: { variantId: string }) {
       )}
       {movements.data && (
         <>
-          <div className={catalogStyles.tableScroll}>
+          <div className={catalogStyles.tableScroll} role="region" aria-label="Inventory movements" tabIndex={0}>
             <table className={catalogStyles.table}>
               <caption className={catalogStyles.srOnly}>Inventory movements, newest first</caption>
               <thead>

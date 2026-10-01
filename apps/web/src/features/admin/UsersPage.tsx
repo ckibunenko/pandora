@@ -112,7 +112,7 @@ export function UsersPage() {
               </button>
             </div>
           ) : (
-            <div className={catalogStyles.tableScroll}>
+            <div className={catalogStyles.tableScroll} role="region" aria-label="Users" tabIndex={0}>
               <table className={catalogStyles.table}>
                 <caption className={catalogStyles.srOnly}>Users by email</caption>
                 <thead>

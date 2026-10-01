@@ -148,7 +148,7 @@ export function CatalogPage({ admin = false }: { admin?: boolean }) {
               </button>
             </div>
           ) : admin ? (
-            <div className={styles.tableScroll}>
+            <div className={styles.tableScroll} role="region" aria-label="Catalog management" tabIndex={0}>
               <table className={styles.table}>
                 <caption className={styles.srOnly}>Catalog management</caption>
                 <thead>
@@ -185,7 +185,7 @@ export function CatalogPage({ admin = false }: { admin?: boolean }) {
                           : "Expansion"}
                       </td>
                       <td>{product.variants.length}</td>
-                      <td>{product.isActive ? "Active" : "Inactive"}</td>
+                      <td><span className={styles.status} data-active={product.isActive}>{product.isActive ? "Active" : "Inactive"}</span></td>
                       <td>
                         <Link
                           to={`/admin/catalog/${product.id}`}

@@ -2,6 +2,9 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+.sku {
+  white-space: nowrap;
+}
 
 .estimate {
   color: var(--color-text-muted);
@@ -10,14 +13,7 @@
 
 /* Status is always written out; color only reinforces it. */
 .status {
-  display: inline-block;
-  padding: 2px var(--space-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
+  composes: badge from "../../components/StatusBadge.module.css";
 }
 
 .status[data-status="draft"] {
@@ -25,13 +21,13 @@
 }
 
 .status[data-status="submitted"] {
-  color: var(--color-success);
-  border-color: var(--color-success);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .status[data-status="cancelled"] {
   color: var(--color-danger);
-  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .lineMeta {
@@ -93,7 +89,7 @@
   margin: var(--space-6) 0;
   padding: var(--space-6);
   background: var(--color-surface);
-  border: 1px solid var(--color-primary);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   display: grid;
   gap: var(--space-3);
@@ -113,15 +109,13 @@
 }
 
 .status[data-status="confirmed"] {
-  color: var(--color-on-primary);
-  background: var(--color-success);
-  border-color: var(--color-success);
+  color: var(--color-success);
+  background: var(--color-success-soft);
 }
 
 .status[data-status="rejected"] {
-  color: var(--color-on-primary);
-  background: var(--color-danger);
-  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
 }
 
 .covered {
@@ -131,14 +125,22 @@
 
 .status[data-status="partially_shipped"] {
   color: var(--color-primary);
-  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .status[data-status="shipped"],
 .status[data-status="closed_partial"] {
-  color: var(--color-on-primary);
-  background: var(--color-text-muted);
-  border-color: var(--color-text-muted);
+  color: var(--color-text-muted);
+  background: var(--color-background);
+}
+.status[data-status="approved"],
+.status[data-status="received"] {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+.status[data-status="pending"] {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
 }
 
 .records {
