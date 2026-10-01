@@ -78,6 +78,12 @@ export function LoginPage() {
 
   return (
     <main className={styles.page}>
+      <div className={styles.brand}>
+        <p className={styles.wordmark}>
+          Pandora<span>GAME DISTRIBUTION</span>
+        </p>
+        <p className={styles.tagline}>Wholesale ordering and fulfillment for independent board-game stores.</p>
+      </div>
       <form className={styles.card} onSubmit={onSubmit} aria-describedby={generalError ? formErrorId : undefined}>
         <h1 className={styles.title}>Sign in to Pandora</h1>
 

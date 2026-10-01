@@ -5,7 +5,7 @@ import { ApiError } from "../../lib/api-client";
 import { useSession } from "../auth/session";
 import { AddToDraft } from "../orders/AddToDraft";
 import { formatPrice, languageLabel, useProduct } from "./catalog-api";
-import { ProductCover } from "./CatalogPage";
+import { ProductCover } from "./ProductCover";
 import styles from "./Catalog.module.css";
 
 function ProductDetails({ product }: { product: CatalogProduct }) {

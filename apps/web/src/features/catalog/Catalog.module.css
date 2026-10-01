@@ -211,34 +211,69 @@
   text-decoration: none;
   margin-bottom: var(--space-6);
 }
+/* Generated cover art (ProductCover): the palette comes from the product, so colors are set inline. */
 .cover {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   aspect-ratio: 4 / 3;
-  padding: var(--space-8);
-  background: #ded4c2;
-  color: #3b382b;
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
   text-align: center;
-  border: 1px solid #c9bba5;
+  border-radius: var(--radius-md);
   box-shadow:
-    inset 0 0 0 10px var(--color-background),
-    inset 0 0 0 11px #c9bba5;
+    0 1px 2px rgb(31 27 22 / 12%),
+    0 6px 18px rgb(31 27 22 / 8%);
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
-.cover[data-kind="expansion"] {
-  background: #e6d2c5;
-  color: #623e30;
+.coverArt {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
 }
-.cover > span {
+.coverLabel {
+  padding: 2px var(--space-2);
   font-size: 0.6rem;
   letter-spacing: 0.13em;
   text-transform: uppercase;
+  background: rgb(255 253 249 / 80%);
+  border-radius: 999px;
 }
-.cover > strong {
-  font: clamp(1.7rem, 2.5vw, 2.7rem)/1.1 var(--font-heading);
+.coverTitle {
   max-width: 14ch;
+  padding: var(--space-3) var(--space-4);
+  font: clamp(1.5rem, 2.3vw, 2.4rem) / 1.1 var(--font-heading);
   text-wrap: balance;
+  background: rgb(255 253 249 / 88%);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgb(31 27 22 / 12%);
+}
+.coverRibbon {
+  position: absolute;
+  top: 18px;
+  right: -36px;
+  width: 140px;
+  padding: 4px 0;
+  color: var(--color-on-primary);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transform: rotate(35deg);
+}
+.coverLink:hover .cover,
+.coverLink:focus-visible .cover {
+  transform: translateY(-3px);
+  box-shadow:
+    0 2px 4px rgb(31 27 22 / 14%),
+    0 12px 28px rgb(31 27 22 / 14%);
 }
 .card h2 {
   margin-bottom: var(--space-2);
@@ -326,15 +361,17 @@
 }
 .detail {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 480px) minmax(0, 1fr);
   gap: 4rem;
   align-items: start;
 }
 .detail > .cover {
   aspect-ratio: 1;
+  width: 100%;
+  max-width: 480px;
 }
-.detail > .cover strong {
-  font-size: clamp(2rem, 4vw, 3.5rem);
+.detail .coverTitle {
+  font-size: clamp(1.8rem, 3.5vw, 3rem);
 }
 .publisher {
   color: var(--color-text-muted);
@@ -521,13 +558,14 @@
     gap: var(--space-8) var(--space-4);
   }
   .cover {
-    padding: var(--space-6) var(--space-3);
+    padding: var(--space-4) var(--space-2);
     aspect-ratio: 3 / 4;
   }
-  .cover > strong {
-    font-size: 1.5rem;
+  .coverTitle {
+    padding: var(--space-2);
+    font-size: 1.25rem;
   }
-  .cover > span {
+  .coverLabel {
     font-size: 0.45rem;
   }
   .card h2 {
@@ -573,7 +611,7 @@
 
 .page h1,
 .card h2,
-.cover strong,
+.coverTitle,
 .variantList strong {
   overflow-wrap: anywhere;
 }

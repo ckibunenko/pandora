@@ -1,18 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
-import type { CatalogProduct } from "@pandora/contracts";
 import { formatPrice, languageLabel, useCatalog } from "./catalog-api";
+import { ProductCover } from "./ProductCover";
 import styles from "./Catalog.module.css";
-
-export function ProductCover({ product }: { product: CatalogProduct }) {
-  return (
-    <div className={styles.cover} data-kind={product.type} aria-hidden="true">
-      <span>PANDORA COLLECTION</span>
-      <strong>{product.name}</strong>
-      <span>{product.publisher}</span>
-    </div>
-  );
-}
 
 export function CatalogPage({ admin = false }: { admin?: boolean }) {
   const [params, setParams] = useSearchParams();
