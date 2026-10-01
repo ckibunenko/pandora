@@ -17,6 +17,7 @@ const runner = checkRunner();
 const check = runner.check;
 const line = (sku) => `[data-test=order-line][data-sku="${sku}"]`;
 const shipLine = (sku) => `[data-test=shipment-line][data-sku="${sku}"] [data-test=shipment-quantity]`;
+const cancelLine = (sku) => `[data-test=cancellation-request-line][data-sku="${sku}"] [data-test=cancellation-request-quantity]`;
 
 async function openOrder(number, status) {
   await navigate(`/orders?status=${status}`);
@@ -76,18 +77,65 @@ try {
     await logout();
   });
 
-  await check("retailer requests cancellation of what is left; the pending request is shown instead of the button", async () => {
+  await check("retailer requests part of what is left: empty and over-quantity requests are flagged; the pending request replaces the button", async () => {
     await login("retailer@tabletop-lantern.test");
     await openOrder("PO-000008", "partially_shipped");
     assert.equal(await count("[data-test=shipment-form]"), 0, "retailers cannot ship");
     await click("[data-test=cancellation-request]");
     await waitFor(`!!${q("[data-test=cancellation-request-panel]")}`, "request panel");
     assert.match(await text("[data-test=cancellation-request-panel]"), /2 units not yet shipped/);
+    assert.equal(await evaluate(`${q(cancelLine("LOV-EN-STD"))}.value`), "0", "nothing is selected by default");
+    await click("[data-test=cancellation-request-submit]");
+    await waitFor(`/at least one line/.test(${q("[data-test=cancellation-request-panel] [role=alert]")}?.textContent ?? "")`, "empty request refused");
+    await fill(cancelLine("LOV-EN-STD"), "3");
+    await click("[data-test=cancellation-request-submit]");
+    await waitFor(`${q(cancelLine("LOV-EN-STD"))}.getAttribute("aria-invalid") === "true"`, "over-quantity flagged");
+    await fill(cancelLine("LOV-EN-STD"), "1");
+    assert.equal(await text("[data-test=cancellation-request-submit]"), "Send request to cancel 1 unit");
+    await fill("[data-test=cancellation-request-reason]", "One copy is enough");
+    await click("[data-test=cancellation-request-submit]");
+    await waitFor(`!!${q("[data-test=cancellation-pending]")}`, "pending notice");
+    assert.match(await text("[data-test=cancellation-pending]"), /LOV-EN-STD × 1/);
+    assert.equal(await count("[data-test=cancellation-request]"), 0);
+    await screenshot("retailer-pending");
+    await logout();
+  });
+
+  await check("staff approve a partial request: the order stays partially shipped and the rest can still ship", async () => {
+    await login("operator@pandora.test");
+    await openOrder("PO-000008", "partially_shipped");
+    await waitFor(`!!${q("[data-test=cancellation-review]")}`, "request panel");
+    assert.match(await text("[data-test=cancellation-review]"), /LOV-EN-STD × 1.*One copy is enough/);
+    await click("[data-test=cancellation-approve]");
+    await waitFor(`${q(`${line("LOV-EN-STD")} [data-test=order-line-cancelled]`)}?.textContent === "1"`, "one unit cancelled");
+    assert.equal(await text("[data-test=order-status]"), "Partially shipped");
+    assert.equal(await text(`${line("LOV-EN-STD")} [data-test=order-line-outstanding]`), "1");
+    assert.equal(await text(`${line("LOV-EN-STD")} [data-test=order-line-reserved]`), "1");
+    assert.equal(await text("[data-test=shipment-submit]"), "Record shipment of 1 unit");
+    assert.equal(await count("[data-test=cancellation-review]"), 0);
+    await logout();
+  });
+
+  await check("retailer cancels all remaining with one click; the request form works by keyboard and at 390px", async () => {
+    await login("retailer@tabletop-lantern.test");
+    await openOrder("PO-000008", "partially_shipped");
+    await click("[data-test=cancellation-request]");
+    await waitFor(`!!${q("[data-test=cancellation-request-panel]")}`, "request panel");
+    assert.match(await text("[data-test=cancellation-request-panel]"), /1 unit not yet shipped/);
+    await evaluate(`${q(cancelLine("LOV-EN-STD"))}.focus()`);
+    await page.pressTab();
+    assert.equal(await evaluate("document.activeElement?.dataset.test"), "cancellation-request-all");
+    assert.notEqual(await evaluate("getComputedStyle(document.activeElement).outlineStyle"), "none");
+    await click("[data-test=cancellation-request-all]");
+    assert.equal(await evaluate(`${q(cancelLine("LOV-EN-STD"))}.value`), "1");
+    assert.equal(await text("[data-test=cancellation-request-submit]"), "Send request to cancel 1 unit");
+    await setWidth(390);
+    assert.ok(await noHorizontalOverflow(), "cancellation request form overflows at 390px");
+    await screenshot("cancellation-request-narrow");
+    await setWidth(1280);
     await fill("[data-test=cancellation-request-reason]", "Overstocked after the fair");
     await click("[data-test=cancellation-request-submit]");
     await waitFor(`!!${q("[data-test=cancellation-pending]")}`, "pending notice");
-    assert.equal(await count("[data-test=cancellation-request]"), 0);
-    await screenshot("retailer-pending");
     await logout();
   });
 

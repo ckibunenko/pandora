@@ -165,7 +165,10 @@ function RequestReview({ order, request }: { order: Order; request: Cancellation
         {request.requestedBy.displayName} asked on {formatDate(request.requestedAt)} to cancel {describeItems(request.items)}
         {request.reason ? `: “${request.reason}”` : "."}
       </p>
-      <p>Approving releases {units(requestedUnits)} of reserved stock. Rejecting keeps the order as it is.</p>
+      <p>
+        Approving releases {units(requestedUnits)} of reserved stock; anything not requested stays open for shipment. Rejecting keeps the
+        order as it is.
+      </p>
       {error && (
         <p role="alert" className={catalogStyles.error} data-test="cancellation-error">
           {mutationMessage(error, "Could not confirm the decision. Try again; it will not be applied twice.")}
@@ -220,28 +223,104 @@ function RequestReview({ order, request }: { order: Order; request: Cancellation
 }
 
 function RequestCancellation({ order }: { order: Order }) {
+  const outstandingLines = order.lines.filter((line) => line.outstandingQuantity > 0);
   const [open, setOpen] = useState(false);
+  const [quantities, setQuantities] = useState<Record<string, string>>(() =>
+    Object.fromEntries(outstandingLines.map((line) => [line.id, "0"])),
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [reason, setReason] = useState("");
   const [key, setKey] = useState(() => crypto.randomUUID());
   const updateCache = useOrderCacheUpdate();
   const request = useMutation({
-    mutationFn: () => requestCancellation(order.id, { version: order.version, ...(reason.trim() ? { reason: reason.trim() } : {}) }, key),
+    mutationFn: (items: { orderLineId: string; quantity: number }[]) =>
+      requestCancellation(order.id, { version: order.version, items, ...(reason.trim() ? { reason: reason.trim() } : {}) }, key),
     onSuccess: updateCache,
   });
-  const remaining = order.lines.reduce((sum, line) => sum + line.outstandingQuantity, 0);
+  const remaining = outstandingLines.reduce((sum, line) => sum + line.outstandingQuantity, 0);
+  const parsed = outstandingLines.map((line) => ({ line, quantity: parseWholeNumber(quantities[line.id] ?? "", false) }));
+  const total = parsed.reduce((sum, entry) => sum + (entry.quantity ?? 0), 0);
+  // Any edit makes this a different request, so it gets a new idempotency key.
+  const edited = (next: Record<string, string>) => {
+    setQuantities(next);
+    setKey(crypto.randomUUID());
+    request.reset();
+  };
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const nextErrors: Record<string, string> = {};
+    for (const { line, quantity } of parsed) {
+      if (quantity === undefined || quantity > line.outstandingQuantity) {
+        nextErrors[line.id] = `Enter 0 to ${line.outstandingQuantity}.`;
+      }
+    }
+    if (Object.keys(nextErrors).length === 0 && total === 0) {
+      nextErrors["form"] = "Enter a quantity for at least one line.";
+    }
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length === 0) {
+      request.mutate(
+        parsed.filter((entry) => (entry.quantity ?? 0) > 0).map((entry) => ({ orderLineId: entry.line.id, quantity: entry.quantity ?? 0 })),
+      );
+    }
+  };
+
   if (!open) {
     return (
       <div className={styles.actions}>
         <button className={catalogStyles.secondary} onClick={() => setOpen(true)} data-test="cancellation-request">
-          Request cancellation of remaining items
+          Request cancellation
         </button>
       </div>
     );
   }
   return (
-    <section className={styles.panel} aria-labelledby="request-heading" data-test="cancellation-request-panel">
-      <h2 id="request-heading">Request cancellation of {units(remaining)} not yet shipped?</h2>
-      <p>The distributor reviews the request. Until then nothing changes, and shipping may continue.</p>
+    <form className={styles.panel} onSubmit={onSubmit} aria-labelledby="request-heading" data-test="cancellation-request-panel" noValidate>
+      <h2 id="request-heading">Request cancellation</h2>
+      <p>
+        {units(remaining)} not yet shipped. Choose how many to cancel; the rest stays on the order. The distributor reviews the
+        request. Until then nothing changes, and shipping may continue.
+      </p>
+      {outstandingLines.map((line) => (
+        <div className={catalogStyles.field} key={line.id} data-test="cancellation-request-line" data-sku={line.sku}>
+          <label htmlFor={`cancel-${line.id}`}>
+            {line.sku} · {line.productName} ({line.outstandingQuantity} outstanding)
+          </label>
+          <input
+            id={`cancel-${line.id}`}
+            className={styles.quantity}
+            inputMode="numeric"
+            value={quantities[line.id] ?? ""}
+            onChange={(event) => edited({ ...quantities, [line.id]: event.target.value })}
+            aria-invalid={errors[line.id] ? true : undefined}
+            aria-describedby={errors[line.id] ? `cancel-${line.id}-error` : undefined}
+            disabled={request.isPending}
+            data-test="cancellation-request-quantity"
+          />
+          {errors[line.id] && (
+            <p className={catalogStyles.fieldError} id={`cancel-${line.id}-error`}>
+              {errors[line.id]}
+            </p>
+          )}
+        </div>
+      ))}
+      <div className={styles.actions}>
+        <button
+          type="button"
+          className={catalogStyles.secondary}
+          onClick={() => edited(Object.fromEntries(outstandingLines.map((line) => [line.id, String(line.outstandingQuantity)])))}
+          disabled={request.isPending}
+          data-test="cancellation-request-all"
+        >
+          Cancel all remaining
+        </button>
+      </div>
+      {errors["form"] && (
+        <p role="alert" className={catalogStyles.error}>
+          {errors["form"]}
+        </p>
+      )}
       <div className={catalogStyles.field}>
         <label htmlFor="cancellation-request-reason">Reason (optional)</label>
         <textarea
@@ -263,14 +342,14 @@ function RequestCancellation({ order }: { order: Order }) {
         </p>
       )}
       <div className={styles.actions}>
-        <button className={catalogStyles.primary} onClick={() => request.mutate()} disabled={request.isPending} data-test="cancellation-request-submit">
-          {request.isPending ? "Sending…" : "Send cancellation request"}
+        <button className={catalogStyles.primary} disabled={request.isPending} data-test="cancellation-request-submit">
+          {request.isPending ? "Sending…" : `Send request to cancel ${units(total)}`}
         </button>
-        <button className={catalogStyles.secondary} onClick={() => setOpen(false)} disabled={request.isPending}>
+        <button type="button" className={catalogStyles.secondary} onClick={() => setOpen(false)} disabled={request.isPending}>
           Keep order
         </button>
       </div>
-    </section>
+    </form>
   );
 }
 

@@ -200,6 +200,101 @@ try {
     await invariantsHold();
   });
 
+  await check("selected cancellation validation: bad items return 422, over-quantity 409, nothing changes", async () => {
+    const order = await confirmedOrder(lantern, [
+      { variantId: cwo.variantId, quantity: 2 },
+      { variantId: tkc.variantId, quantity: 3 },
+    ]);
+    const cwoLine = order.lines.find((l) => l.sku === "CWO-EN-STD");
+    const foreignLine = (await orderById(po9.id)).lines[0];
+    const before = await stockState();
+    for (const items of [
+      [],
+      [{ orderLineId: randomUUID(), quantity: 1 }],
+      [{ orderLineId: foreignLine.id, quantity: 1 }],
+      [{ orderLineId: cwoLine.id, quantity: 0 }],
+      [{ orderLineId: cwoLine.id, quantity: -1 }],
+      [{ orderLineId: cwoLine.id, quantity: 1.5 }],
+      [{ orderLineId: cwoLine.id, quantity: 1, sku: "CWO-EN-STD" }],
+      [{ orderLineId: cwoLine.id, quantity: 1 }, { orderLineId: cwoLine.id, quantity: 1 }],
+    ]) {
+      assertError(await post(lantern, `/orders/${order.id}/cancellation-requests`, { version: 3, items }), 422, "VALIDATION_FAILED");
+    }
+    const over = await post(lantern, `/orders/${order.id}/cancellation-requests`, { version: 3, items: [{ orderLineId: cwoLine.id, quantity: 3 }] });
+    assertError(over, 409, "CANCELLATION_QUANTITY_EXCEEDED");
+    assert.deepEqual(over.body.details, [{ field: "lines.CWO-EN-STD", message: "Only 2 left to cancel." }]);
+    assertError(await post(lantern, `/orders/${order.id}/cancellation-requests`, { version: 2, items: [{ orderLineId: cwoLine.id, quantity: 1 }] }), 409, "VERSION_CONFLICT");
+    assert.deepEqual(await stockState(), before);
+    assert.equal((await orderById(order.id)).version, 3);
+  });
+
+  await check("selected cancellation: approval releases only the requested units; the rest ships and closes partial", async () => {
+    const order = await confirmedOrder(lantern, [
+      { variantId: cwo.variantId, quantity: 2 },
+      { variantId: tkc.variantId, quantity: 3 },
+    ]);
+    const tkcLine = order.lines.find((l) => l.sku === "TKC-EN-STD");
+    const tkcBefore = await itemBySku("TKC-EN-STD");
+    const key = randomUUID();
+    const body = { version: 3, reason: "Two copies are enough", items: [{ orderLineId: tkcLine.id, quantity: 1 }] };
+    const requested = await post(lantern, `/orders/${order.id}/cancellation-requests`, body, key);
+    assert.equal(requested.status, 200, JSON.stringify(requested.body));
+    assert.deepEqual(requested.body.cancellationRequests[0].items.map((i) => [i.sku, i.quantity]), [["TKC-EN-STD", 1]]);
+    assert.deepEqual((await post(lantern, `/orders/${order.id}/cancellation-requests`, body, key)).body, requested.body, "replay");
+    assert.equal(await db.cancellationRequest.count({ where: { orderId: order.id } }), 1);
+    const audit = await db.auditEvent.findFirstOrThrow({ where: { entityId: order.id, action: "cancellation_requested" } });
+    assert.deepEqual([audit.after.scope, audit.after.requested], ["selected", { "TKC-EN-STD": 1 }]);
+
+    const approved = await post(operator, `/orders/${order.id}/cancellation-requests/${requested.body.cancellationRequests[0].id}/approve`, { version: 4 });
+    assert.equal(approved.status, 200, JSON.stringify(approved.body));
+    const bySku = Object.fromEntries(approved.body.lines.map((l) => [l.sku, [l.cancelledQuantity, l.outstandingQuantity, l.reservedQuantity]]));
+    assert.deepEqual(bySku, { "CWO-EN-STD": [0, 2, 2], "TKC-EN-STD": [1, 2, 2] });
+    assert.deepEqual([approved.body.status, approved.body.cancelledBy, approved.body.cancellationReason], ["confirmed", null, null]);
+    assert.equal(available(await itemBySku("TKC-EN-STD")), available(tkcBefore) + 1);
+    const releases = await db.inventoryMovement.findMany({ where: { type: "RELEASE", reference: order.number } });
+    assert.deepEqual(releases.map((m) => m.delta), [-1]);
+
+    const shipped = await post(operator, `/orders/${order.id}/shipments`, { version: 5, items: allOutstanding(approved.body) });
+    assert.equal(shipped.status, 200, JSON.stringify(shipped.body));
+    assert.equal(shipped.body.status, "closed_partial");
+    await invariantsHold();
+  });
+
+  await check("partially shipped: a partial approval keeps the order open; an overtaken request conflicts; omitting items cancels the rest", async () => {
+    const order = await confirmedOrder(lantern, [{ variantId: lov.variantId, quantity: 5 }]);
+    const line = order.lines[0];
+    const only = (quantity) => [{ orderLineId: line.id, quantity }];
+    assert.equal((await post(operator, `/orders/${order.id}/shipments`, { version: 3, items: only(1) })).status, 200);
+    const first = await post(lantern, `/orders/${order.id}/cancellation-requests`, { version: 4, items: only(2) });
+    const approved = await post(operator, `/orders/${order.id}/cancellation-requests/${first.body.cancellationRequests[0].id}/approve`, { version: 5 });
+    assert.deepEqual(
+      [approved.body.status, approved.body.lines[0].shippedQuantity, approved.body.lines[0].cancelledQuantity, approved.body.lines[0].outstandingQuantity],
+      ["partially_shipped", 1, 2, 2],
+    );
+
+    const second = await post(lantern, `/orders/${order.id}/cancellation-requests`, { version: 6, items: only(2) });
+    assert.equal(second.status, 200, "a new request is possible after a decision");
+    assert.equal((await post(operator, `/orders/${order.id}/shipments`, { version: 7, items: only(1) })).status, 200);
+    const before = await stockState();
+    const secondId = second.body.cancellationRequests.at(-1).id;
+    const conflict = await post(operator, `/orders/${order.id}/cancellation-requests/${secondId}/approve`, { version: 8 });
+    assertError(conflict, 409, "CANCELLATION_CONFLICT");
+    assert.deepEqual(conflict.body.details, [{ field: "lines.LOV-EN-STD", message: "Requested 2, only 1 still outstanding." }]);
+    assert.deepEqual(await stockState(), before);
+    await post(operator, `/orders/${order.id}/cancellation-requests/${secondId}/reject`, { version: 8, reason: "One more unit already shipped" });
+
+    const rest = await post(lantern, `/orders/${order.id}/cancellation-requests`, { version: 9 });
+    assert.deepEqual(rest.body.cancellationRequests.at(-1).items.map((i) => i.quantity), [1]);
+    const restAudit = await db.auditEvent.findMany({ where: { entityId: order.id, action: "cancellation_requested" } });
+    assert.deepEqual(restAudit.map((event) => event.after.scope).sort(), ["all_remaining", "selected", "selected"]);
+    const closed = await post(operator, `/orders/${order.id}/cancellation-requests/${rest.body.cancellationRequests.at(-1).id}/approve`, { version: 10 });
+    assert.deepEqual(
+      [closed.body.status, closed.body.lines[0].shippedQuantity, closed.body.lines[0].cancelledQuantity, closed.body.lines[0].outstandingQuantity],
+      ["closed_partial", 2, 3, 0],
+    );
+    await invariantsHold();
+  });
+
   await check("concurrency: parallel shipments of the last units never over-ship", async () => {
     const order = await confirmedOrder(lantern, [{ variantId: cwo.variantId, quantity: 2 }]);
     const results = await Promise.all(

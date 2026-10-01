@@ -90,6 +90,10 @@ export class ApiException extends HttpException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationRequestPending, "A cancellation request for this order is already pending.");
   }
 
+  static cancellationQuantityExceeded(details: readonly ErrorDetail[]): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationQuantityExceeded, "A cancellation request cannot exceed the outstanding quantity.", details);
+  }
+
   static cancellationConflict(details: readonly ErrorDetail[]): ApiException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationConflict, "The order changed since the cancellation was requested.", details);
   }

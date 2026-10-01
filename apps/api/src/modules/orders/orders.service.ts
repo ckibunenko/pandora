@@ -738,7 +738,7 @@ export class OrdersService {
     );
   }
 
-  /** Retailer asks to cancel every unit not yet shipped; nothing is released until staff approve. */
+  /** Retailer asks to cancel selected unshipped units (or all of them); nothing is released until staff approve. */
   async requestCancellation(orderId: string, input: RequestCancellation, auth: AuthContext, key: string): Promise<Order> {
     try {
       return await this.idempotency.execute(
@@ -749,12 +749,32 @@ export class OrdersService {
           const order = await this.findScoped(tx, orderId, auth);
           this.assertStatus(order, OPEN_FOR_FULFILLMENT, "Only confirmed or partially shipped orders accept cancellation requests.");
           this.assertVersion(order, input.version);
+          const lines = new Map(order.lines.map((line) => [line.id, line]));
+          const unknown = (input.items ?? []).flatMap((item, index) =>
+            lines.has(item.orderLineId) ? [] : [{ field: `items.${index}.orderLineId`, message: "Not a line of this order." }],
+          );
+          if (unknown.length > 0) {
+            throw ApiException.validationFailed(unknown);
+          }
           if (order.cancellationRequests.some((request) => request.status === "PENDING")) {
             throw ApiException.cancellationRequestPending();
           }
-          const open = order.lines.filter((line) => outstanding(line) > 0);
-          if (open.length === 0) {
+          const requested = input.items
+            ? input.items.flatMap((item) => {
+                const line = lines.get(item.orderLineId);
+                return line ? [{ line, quantity: item.quantity }] : [];
+              })
+            : order.lines.filter((line) => outstanding(line) > 0).map((line) => ({ line, quantity: outstanding(line) }));
+          if (requested.length === 0) {
             throw ApiException.invalidOrderTransition("Nothing is left to cancel.");
+          }
+          const exceeded = requested.flatMap(({ line, quantity }) =>
+            quantity > outstanding(line)
+              ? [{ field: `lines.${line.sku ?? line.variant.sku}`, message: `Only ${outstanding(line)} left to cancel.` }]
+              : [],
+          );
+          if (exceeded.length > 0) {
+            throw ApiException.cancellationQuantityExceeded(exceeded);
           }
           await tx.cancellationRequest.create({
             data: {
@@ -763,7 +783,7 @@ export class OrdersService {
               reason: input.reason ?? null,
               requestedById: auth.user.id,
               requestedAt: this.clock.now(),
-              items: { create: open.map((line) => ({ orderLineId: line.id, quantity: outstanding(line) })) },
+              items: { create: requested.map(({ line, quantity }) => ({ orderLineId: line.id, quantity })) },
             },
           });
           await this.bumpVersion(tx, order, {});
@@ -775,7 +795,8 @@ export class OrdersService {
             after: {
               version: order.version + 1,
               reason: input.reason ?? null,
-              requested: Object.fromEntries(open.map((line) => [line.sku ?? line.variant.sku, outstanding(line)])),
+              scope: input.items ? "selected" : "all_remaining",
+              requested: Object.fromEntries(requested.map(({ line, quantity }) => [line.sku ?? line.variant.sku, quantity])),
             },
           });
           return this.orderDto(await this.findScoped(tx, orderId, auth));

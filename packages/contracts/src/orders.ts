@@ -63,26 +63,27 @@ export const rejectOrderSchema = z.strictObject({
   reason: z.string().trim().min(3).max(500),
 });
 
-export const shipOrderSchema = z.strictObject({
-  version: versionSchema,
-  items: z
-    .array(z.strictObject({ orderLineId: z.uuid(), quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY) }))
-    .min(1)
-    .max(MAX_ORDER_LINES)
-    .superRefine((items, ctx) => {
-      const seen = new Set<string>();
-      items.forEach((item, index) => {
-        if (seen.has(item.orderLineId)) {
-          ctx.addIssue({ code: "custom", path: [index, "orderLineId"], message: "Each line can appear only once." });
-        }
-        seen.add(item.orderLineId);
-      });
-    }),
-});
+const fulfillmentItemsInputSchema = z
+  .array(z.strictObject({ orderLineId: z.uuid(), quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY) }))
+  .min(1)
+  .max(MAX_ORDER_LINES)
+  .superRefine((items, ctx) => {
+    const seen = new Set<string>();
+    items.forEach((item, index) => {
+      if (seen.has(item.orderLineId)) {
+        ctx.addIssue({ code: "custom", path: [index, "orderLineId"], message: "Each line can appear only once." });
+      }
+      seen.add(item.orderLineId);
+    });
+  });
+
+export const shipOrderSchema = z.strictObject({ version: versionSchema, items: fulfillmentItemsInputSchema });
 
 export const requestCancellationSchema = z.strictObject({
   version: versionSchema,
   reason: z.string().trim().min(1).max(500).optional(),
+  /** Unshipped quantities to cancel; omitted means every outstanding unit. */
+  items: fulfillmentItemsInputSchema.optional(),
 });
 
 export const approveCancellationSchema = z.strictObject({ version: versionSchema });

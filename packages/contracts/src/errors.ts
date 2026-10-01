@@ -23,6 +23,7 @@ export const ERROR_CODES = {
   shipmentQuantityExceeded: "SHIPMENT_QUANTITY_EXCEEDED",
   cancellationRequestPending: "CANCELLATION_REQUEST_PENDING",
   cancellationConflict: "CANCELLATION_CONFLICT",
+  cancellationQuantityExceeded: "CANCELLATION_QUANTITY_EXCEEDED",
   organizationNameExists: "ORGANIZATION_NAME_EXISTS",
   emailAlreadyExists: "EMAIL_ALREADY_EXISTS",
   distributorOrganizationProtected: "DISTRIBUTOR_ORGANIZATION_PROTECTED",
