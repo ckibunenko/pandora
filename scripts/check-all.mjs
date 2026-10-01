@@ -35,6 +35,7 @@ const API_SUITES = [
   { name: "orders", script: "check:orders", databaseEnv: "ORDERS_CHECK_DATABASE", prefix: "pandora_orders_check" },
   { name: "processing", script: "check:processing", databaseEnv: "PROCESSING_CHECK_DATABASE", prefix: "pandora_processing_check" },
   { name: "fulfillment", script: "check:fulfillment", databaseEnv: "FULFILLMENT_CHECK_DATABASE", prefix: "pandora_fulfillment_check" },
+  { name: "returns", script: "check:returns", databaseEnv: "RETURNS_CHECK_DATABASE", prefix: "pandora_returns_check" },
   { name: "admin", script: "check:admin", databaseEnv: "ADMIN_CHECK_DATABASE", prefix: "pandora_admin_check" },
   { name: "demo-reset", script: "check:demo-reset", databaseEnv: "DEMO_CHECK_DATABASE", prefix: "pandora_demo_check" },
   { name: "auth", script: "check:auth", databaseEnv: "AUTH_CHECK_DATABASE", prefix: "pandora_auth_check" },
@@ -44,6 +45,7 @@ const API_SUITES = [
 const BROWSER_GROUPS = [
   { name: "operations", suites: [{ file: "operations-browser", evidenceEnv: "OPERATIONS_CHECK_EVIDENCE" }] },
   { name: "fulfillment", suites: [{ file: "fulfillment-browser", evidenceEnv: "FULFILLMENT_CHECK_EVIDENCE" }] },
+  { name: "returns", suites: [{ file: "returns-browser", evidenceEnv: "RETURNS_CHECK_EVIDENCE" }] },
   {
     name: "processing",
     suites: [

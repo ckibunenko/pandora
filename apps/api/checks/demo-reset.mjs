@@ -37,6 +37,7 @@ try {
     assert.equal(await db.order.count(), 9);
     assert.equal(await db.shipment.count(), 1);
     assert.equal(await db.cancellationRequest.count(), 1);
+    assert.deepEqual((await db.returnRequest.findMany({ select: { number: true, status: true } })), [{ number: "RT-000001", status: "PENDING" }]);
     assert.equal(await db.user.count(), 6);
   });
   const inventory = await db.inventoryItem.findMany({ select: { variantId: true, sellable: true, reserved: true, damaged: true }, orderBy: { variantId: "asc" } });
@@ -47,6 +48,8 @@ try {
   await db.session.create({ data: { userId: ADMIN, tokenHash: "qa-only-old-token", csrfToken: "qa-only-csrf", createdAt: now, lastSeenAt: now, expiresAt: new Date(now.getTime() + 3600000) } });
   await db.idempotencyRecord.create({ data: { organizationId: ORG, actorId: ADMIN, operation: "qa", target: "qa", key: "qa-key", requestHash: "a".repeat(64), status: "COMPLETED", leaseExpiresAt: now, createdAt: now, completedAt: now, responseStatus: 200, responseBody: { old: true } } });
   await db.$queryRaw`SELECT nextval('orders_number_seq')`;
+  await db.$queryRaw`SELECT nextval('returns_number_seq')`;
+  await db.returnRequest.update({ where: { number: "RT-000001" }, data: { status: "REJECTED", decidedAt: now, decidedById: ADMIN, decisionReason: "QA change before reset" } });
   const changed = await snapshot();
 
   await check("wrong names and mismatched connected database rejected without changing data", async () => {
@@ -82,6 +85,8 @@ try {
     assert.deepEqual(await db.inventoryItem.findMany({ select: { variantId: true, sellable: true, reserved: true, damaged: true }, orderBy: { variantId: "asc" } }), inventory);
     assert.equal((await db.$queryRaw`SELECT nextval('orders_number_seq') AS n`)[0].n, 1001n);
     assert.equal((await db.$queryRaw`SELECT nextval('shipments_number_seq') AS n`)[0].n, 1001n);
+    assert.equal((await db.$queryRaw`SELECT nextval('returns_number_seq') AS n`)[0].n, 1001n);
+    assert.equal((await db.returnRequest.findUniqueOrThrow({ where: { number: "RT-000001" } })).status, "PENDING");
   });
   await check("repeated reset reproduces fixture counts, inventory, and sequence start", async () => {
     await restoreDemoData(db, database, hash);

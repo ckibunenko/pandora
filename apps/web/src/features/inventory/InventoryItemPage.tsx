@@ -16,6 +16,7 @@ const MOVEMENT_LABELS: Record<InventoryMovement["type"], string> = {
   reservation: "Reservation",
   shipment: "Shipment",
   release: "Reservation released",
+  return: "Return",
 };
 
 const signed = (value: number) => (value > 0 ? `+${value}` : String(value));

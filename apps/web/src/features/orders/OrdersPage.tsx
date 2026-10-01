@@ -81,6 +81,13 @@ export function OrdersPage() {
           </select>
         </label>
         <label>
+          Returns
+          <select value={params.get("returns") ?? ""} onChange={(event) => change("returns", event.target.value)} data-test="orders-returns-filter">
+            <option value="">All orders</option>
+            <option value="open">With open returns</option>
+          </select>
+        </label>
+        <label>
           Order
           <select value={params.get("sort") ?? "created_desc"} onChange={(event) => change("sort", event.target.value)} data-test="orders-sort">
             <option value="created_desc">Newest first</option>
@@ -105,7 +112,7 @@ export function OrdersPage() {
           </p>
           {!orders.data.items.length ? (
             <div className={catalogStyles.empty}>
-              <h2>{params.get("status") ? "No orders with this status" : "No orders yet"}</h2>
+              <h2>{params.get("status") || params.get("returns") ? "No orders match these filters" : "No orders yet"}</h2>
               <p>
                 {params.get("status") === "submitted" && !canEdit
                   ? "Nothing is waiting for a decision."
@@ -141,6 +148,11 @@ export function OrdersPage() {
                         <span className={styles.status} data-status={order.status} data-test="order-status">
                           {STATUS_LABELS[order.status]}
                         </span>
+                        {order.openReturnCount > 0 && (
+                          <span className={styles.openReturns} data-test="order-open-returns">
+                            {order.openReturnCount} open {order.openReturnCount === 1 ? "return" : "returns"}
+                          </span>
+                        )}
                       </td>
                       <td className={styles.number}>{order.lineCount}</td>
                       <td className={styles.number}>

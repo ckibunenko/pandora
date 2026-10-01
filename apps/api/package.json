@@ -18,6 +18,7 @@
     "check:orders": "node --env-file-if-exists=../../.env checks/orders.mjs",
     "check:processing": "node --env-file-if-exists=../../.env checks/order-processing.mjs",
     "check:fulfillment": "node --env-file-if-exists=../../.env checks/fulfillment.mjs",
+    "check:returns": "node --env-file-if-exists=../../.env checks/returns.mjs",
     "check:admin": "node --env-file-if-exists=../../.env checks/administration.mjs",
     "check:auth": "node --env-file-if-exists=../../.env checks/auth.mjs",
     "check:bug-lab": "node --env-file-if-exists=../../.env checks/bug-lab.mjs",

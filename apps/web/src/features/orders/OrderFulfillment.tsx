@@ -6,6 +6,7 @@ import catalogStyles from "../catalog/Catalog.module.css";
 import { parseWholeNumber } from "../inventory/inventory-api";
 import { formatDate, mutationMessage, useOrderCacheUpdate } from "./order-helpers";
 import { approveCancellation, rejectCancellation, requestCancellation, shipOrder } from "./orders-api";
+import { ReturnActions, ReturnList } from "./OrderReturns";
 import styles from "./Orders.module.css";
 
 const units = (count: number) => `${count} ${count === 1 ? "unit" : "units"}`;
@@ -405,6 +406,7 @@ export function FulfillmentView({ order, isStaff }: { order: Order; isStaff: boo
         <small> Prices were fixed at submission.</small>
       </p>
       {open && isStaff && pending && <RequestReview key={`${pending.id}-${order.version}`} order={order} request={pending} />}
+      <ReturnActions order={order} isStaff={isStaff} />
       {open && isStaff && <ShipmentForm key={order.version} order={order} />}
       {open && !isStaff && pending && (
         <p role="status" className={styles.panel} data-test="cancellation-pending">
@@ -413,6 +415,7 @@ export function FulfillmentView({ order, isStaff }: { order: Order; isStaff: boo
       )}
       {open && !isStaff && !pending && <RequestCancellation key={order.version} order={order} />}
       <Records order={order} />
+      <ReturnList order={order} />
     </>
   );
 }

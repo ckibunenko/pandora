@@ -2,6 +2,7 @@ import { applyDecorators, Body, Controller, Get, HttpCode, HttpStatus, Param, Po
 import { ApiBody, ApiCookieAuth, ApiHeader, ApiParam, ApiQuery, ApiResponse, ApiTags } from "@nestjs/swagger";
 import {
   approveCancellationSchema,
+  approveReturnSchema,
   cancellationRequestParamsSchema,
   cancelOrderSchema,
   confirmOrderSchema,
@@ -12,12 +13,17 @@ import {
   orderQuerySchema,
   orderSchema,
   rejectCancellationSchema,
+  receiveReturnSchema,
   rejectOrderSchema,
+  rejectReturnSchema,
   requestCancellationSchema,
+  requestReturnSchema,
+  returnParamsSchema,
   saveOrderLinesSchema,
   shipOrderSchema,
   submitOrderSchema,
   type ApproveCancellation,
+  type ApproveReturn,
   type CancelOrder,
   type ConfirmOrder,
   type CreateOrder,
@@ -25,8 +31,11 @@ import {
   type OrderListResponse,
   type OrderQuery,
   type RejectCancellation,
+  type ReceiveReturn,
   type RejectOrder,
+  type RejectReturn,
   type RequestCancellation,
+  type RequestReturn,
   type SaveOrderLines,
   type ShipOrder,
   type SubmitOrder,
@@ -40,12 +49,14 @@ import type { AuthContext } from "../auth/auth-context.js";
 import { CSRF_HEADER_NAME, SESSION_COOKIE_NAME } from "../auth/auth.constants.js";
 import { CurrentAuth, Roles } from "../auth/decorators.js";
 import { OrdersService } from "./orders.service.js";
+import { ReturnsService } from "./returns.service.js";
 
 const ERROR_SCHEMA = openApiSchema(errorEnvelopeSchema);
 const ORDER_SCHEMA = openApiSchema(orderSchema);
 
 type OrderParams = z.infer<typeof orderParamsSchema>;
 type RequestParams = z.infer<typeof cancellationRequestParamsSchema>;
+type ReturnParams = z.infer<typeof returnParamsSchema>;
 const STAFF: readonly UserRole[] = ["operator", "administrator"];
 
 function queryParams(schema: z.ZodType) {
@@ -83,7 +94,10 @@ function orderMutation(
 @ApiResponse({ status: 422, description: "VALIDATION_FAILED", schema: ERROR_SCHEMA })
 @Controller("orders")
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly returns: ReturnsService,
+  ) {}
 
   @Get()
   @queryParams(orderQuerySchema)
@@ -273,5 +287,83 @@ export class OrdersController {
     @CurrentAuth() auth: AuthContext,
   ): Promise<Order> {
     return this.orders.rejectCancellation(params.orderId, params.requestId, body, auth, key);
+  }
+
+  @Post(":orderId/returns")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @orderMutation(
+    requestReturnSchema,
+    200,
+    "INVALID_ORDER_TRANSITION, RETURN_QUANTITY_EXCEEDED, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+  )
+  requestReturn(
+    @Param(new ZodValidationPipe(orderParamsSchema)) params: OrderParams,
+    @Body(new ZodValidationPipe(requestReturnSchema)) body: RequestReturn,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.returns.request(params.orderId, body, auth, key);
+  }
+
+  @Post(":orderId/returns/:returnId/approve")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @ApiParam({ name: "returnId", format: "uuid" })
+  @orderMutation(
+    approveReturnSchema,
+    200,
+    "INVALID_RETURN_TRANSITION, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  approveReturn(
+    @Param(new ZodValidationPipe(returnParamsSchema)) params: ReturnParams,
+    @Body(new ZodValidationPipe(approveReturnSchema)) body: ApproveReturn,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.returns.approve(params.orderId, params.returnId, body, auth, key);
+  }
+
+  @Post(":orderId/returns/:returnId/reject")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @ApiParam({ name: "returnId", format: "uuid" })
+  @orderMutation(
+    rejectReturnSchema,
+    200,
+    "INVALID_RETURN_TRANSITION, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  rejectReturn(
+    @Param(new ZodValidationPipe(returnParamsSchema)) params: ReturnParams,
+    @Body(new ZodValidationPipe(rejectReturnSchema)) body: RejectReturn,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.returns.reject(params.orderId, params.returnId, body, auth, key);
+  }
+
+  @Post(":orderId/returns/:returnId/receive")
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: "orderId", format: "uuid" })
+  @ApiParam({ name: "returnId", format: "uuid" })
+  @orderMutation(
+    receiveReturnSchema,
+    200,
+    "INVALID_RETURN_TRANSITION, RETURN_QUANTITY_EXCEEDED, IDEMPOTENCY_KEY_REUSED, REQUEST_IN_PROGRESS, or CONCURRENT_MODIFICATION",
+    true,
+    STAFF,
+  )
+  receiveReturn(
+    @Param(new ZodValidationPipe(returnParamsSchema)) params: ReturnParams,
+    @Body(new ZodValidationPipe(receiveReturnSchema)) body: ReceiveReturn,
+    @IdempotencyKey() key: string,
+    @CurrentAuth() auth: AuthContext,
+  ): Promise<Order> {
+    return this.returns.receive(params.orderId, params.returnId, body, auth, key);
   }
 }
