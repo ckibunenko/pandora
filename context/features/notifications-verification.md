@@ -89,6 +89,7 @@ DEMO_COMPOSE_PROJECT=pandora-demo-qa-notifications DEMO_PORT=5186 DEMO_MAIL_PORT
 ## Status and limits
 
 - **Full `pnpm check:all`** (run `20261001_073834`): 20 of 20 suites passed, including the build. There are now twelve API suites and eight browser groups. `pnpm typecheck`, `pnpm lint`, and `git diff --check` pass.
+- **CI:** run `36861717385` on PR #8 passed all three jobs. Merged to `main` as `1c08d9b`.
 - **Duplicate delivery is possible:** delivery is at least once. A worker that sends and then loses its lease before recording the outcome produces an `ambiguous` attempt, and the message may arrive twice. This is intended and visible in diagnostics.
 - **Worker location:** the worker lives in `apps/api` instead of the target `apps/notification-worker` (recorded decision), so that it shares the generated client, configuration, clock, and Bug Lab guard.
 - **Out of scope:** user preferences, HTML email, real providers, and retailer-facing notification history.

@@ -4,7 +4,7 @@ Notifications (Phase 3, part 2). Business events enqueue email jobs in a Postgre
 
 ## Status
 
-In progress on `feature/notifications`.
+Completed — merged to `main` as `1c08d9b` (2026-10-01) through PR #8; CI run `36861717385` passed all 3 jobs.
 
 ## Goal
 
