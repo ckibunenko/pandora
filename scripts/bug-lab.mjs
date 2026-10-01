@@ -2,7 +2,8 @@
 // and starts the app against it. It never touches the development or demo database.
 //
 //   pnpm bug-lab setup --defect BUG-001|BUG-002|BUG-003|none [--suffix <name>]
-//   pnpm bug-lab start --run <run id> [--api-port 3020] [--web-port 5176]
+//   pnpm bug-lab start --run <run id> [--api-port 3020] [--web-port 5176] [--smtp-url smtp://127.0.0.1:1026]
+//   The notification worker delivers to the separate Bug Lab inbox: docker compose --profile bug-lab up -d mailpit-buglab
 import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -25,6 +26,7 @@ const { values: options } = parseArgs({
     run: { type: "string" },
     "api-port": { type: "string", default: "3020" },
     "web-port": { type: "string", default: "5176" },
+    "smtp-url": { type: "string", default: "smtp://127.0.0.1:1026" },
   },
 });
 
@@ -112,6 +114,12 @@ function start() {
   };
   if (!manifest.defect) delete apiEnv.BUG_LAB_DEFECT;
   const api = spawn(process.execPath, ["dist/main.js"], { cwd: apiDir, env: apiEnv, stdio: "inherit" });
+  // Same defect selection and database as the API, so it refuses the same configurations; its own inbox (overview §9).
+  const worker = spawn(process.execPath, ["dist/worker.js"], {
+    cwd: apiDir,
+    env: { ...apiEnv, NOTIFICATION_SMTP_URL: options["smtp-url"] },
+    stdio: "inherit",
+  });
   // pnpm starts vite as its own child, so the web server runs in its own process group and is stopped as a group.
   const web = spawn("pnpm", ["--filter", "@pandora/web", "dev", "--port", options["web-port"], "--strictPort"], {
     cwd: root,
@@ -127,15 +135,21 @@ function start() {
     }
   };
   console.log(`${manifest.mode === "standard" ? "Standard comparison" : "Bug Lab"} run ${manifest.runId}: http://localhost:${options["web-port"]}`);
+  console.log(`Notifications go to ${options["smtp-url"]} (Bug Lab inbox UI: http://localhost:8026 when mailpit-buglab runs).`);
   const stop = () => {
     api.kill("SIGTERM");
+    worker.kill("SIGTERM");
     stopWeb();
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
   api.on("exit", (code) => {
     if (code) console.error(`The API exited with code ${code}.`);
+    worker.kill("SIGTERM");
     stopWeb();
+  });
+  worker.on("exit", (code) => {
+    if (code) console.error(`The notification worker exited with code ${code}.`);
   });
 }
 

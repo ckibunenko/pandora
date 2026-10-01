@@ -1,10 +1,10 @@
 import { Global, Module, type DynamicModule } from "@nestjs/common";
-import { APP_CONFIG, type AppConfig } from "./app-config.js";
+import { APP_CONFIG, type BaseConfig } from "./app-config.js";
 
 @Global()
 @Module({})
 export class AppConfigModule {
-  static forRoot(config: AppConfig): DynamicModule {
+  static forRoot(config: BaseConfig): DynamicModule {
     return {
       module: AppConfigModule,
       providers: [{ provide: APP_CONFIG, useValue: config }],

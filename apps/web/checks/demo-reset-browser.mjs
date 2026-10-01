@@ -32,13 +32,16 @@ const page = await startBrowser({ base, evidence, port: 9346 });
 let actor;
 let injected = false;
 try {
-  await runner.check("isolated stack exposes only the web port; retailer can sign in", async () => {
+  await runner.check("isolated stack exposes only the web port and the loopback inbox UI; the worker runs; retailer can sign in", async () => {
     const result = await compose("ps", "--format", "json");
     assert.equal(result.code, 0);
     const services = result.output.trim().split("\n").map((line) => JSON.parse(line));
-    for (const service of services.filter((item) => item.Service !== "web")) {
+    for (const service of services.filter((item) => item.Service !== "web" && item.Service !== "mailpit")) {
       assert.ok((service.Publishers ?? []).every((port) => !port.PublishedPort));
     }
+    const inbox = services.find((item) => item.Service === "mailpit");
+    assert.ok(inbox?.Publishers.filter((port) => port.PublishedPort).every((port) => port.URL === "127.0.0.1" && port.TargetPort === 8025));
+    assert.equal(services.find((item) => item.Service === "worker")?.State, "running");
     await page.login("retailer@tabletop-lantern.test", process.env.DEMO_USER_PASSWORD);
     await page.screenshot("catalog-before-reset");
     const response = await fetch(`${base}/api/auth/login`, {
@@ -65,8 +68,8 @@ try {
     const result = await reset();
     assert.notEqual(result.code, 0);
     assert.match(result.output, /maintenance remains enabled/);
-    const stopped = await compose("ps", "--status", "running", "-q", "api");
-    assert.equal(stopped.output.trim(), "");
+    const stopped = await compose("ps", "--status", "running", "-q", "api", "worker");
+    assert.equal(stopped.output.trim(), "", "API and notification worker stay stopped");
     assert.equal(await sql("SELECT count(*) FROM organizations WHERE name = 'Reset Browser Temporary Store'"), "1");
     const response = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
     assert.equal(response.status, 503);
@@ -96,6 +99,31 @@ try {
     assert.equal((await fetch(`${base}/api/auth/session`, { headers: { Cookie: actor.cookie } })).status, 401);
     assert.equal(await sql("SELECT count(*) FROM organizations WHERE name = 'Reset Browser Temporary Store'"), "0");
     assert.equal(await sql("SELECT count(*) FROM orders"), "9");
+    assert.equal(await sql("SELECT count(*) FROM notification_jobs"), "0");
+    assert.equal((await compose("ps", "--status", "running", "-q", "worker")).output.trim() !== "", true, "worker restarted");
+    // A business event after the reset reaches the demo's own captured inbox through the restarted worker.
+    const inbox = `http://127.0.0.1:${process.env.DEMO_MAIL_PORT}/api/v1`;
+    await fetch(`${inbox}/messages`, { method: "DELETE" });
+    const signIn = await fetch(`${base}/api/auth/login`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "retailer@tabletop-lantern.test", password: process.env.DEMO_USER_PASSWORD }),
+    });
+    const retailer = { cookie: signIn.headers.get("set-cookie").split(";")[0], csrf: (await signIn.json()).csrfToken };
+    const headers = { Cookie: retailer.cookie, "X-CSRF-Token": retailer.csrf, "Content-Type": "application/json" };
+    const draftId = await sql("SELECT id FROM orders WHERE number = 'PO-000001'");
+    const draft = await (await fetch(`${base}/api/orders/${draftId}`, { headers })).json();
+    const submitted = await fetch(`${base}/api/orders/${draftId}/submit`, {
+      method: "POST", headers: { ...headers, "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ version: draft.version, reviewedPrices: draft.lines.map((l) => ({ variantId: l.variantId, unitPriceMinor: l.unitPriceMinor })) }),
+    });
+    assert.equal(submitted.status, 200);
+    let delivered = [];
+    for (let i = 0; i < 60 && delivered.length < 2; i += 1) {
+      delivered = (await (await fetch(`${inbox}/messages`)).json()).messages;
+      if (delivered.length < 2) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.deepEqual(delivered.map((message) => message.To[0].Address).sort(), ["admin@pandora.test", "operator@pandora.test"]);
+    assert.ok(delivered.every((message) => message.Subject === "PO-000001 submitted by Tabletop Lantern"));
     await page.setWidth(1280);
     await page.login("retailer@tabletop-lantern.test", process.env.DEMO_USER_PASSWORD);
     assert.ok(await page.noHorizontalOverflow());

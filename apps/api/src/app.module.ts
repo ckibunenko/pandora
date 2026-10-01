@@ -13,13 +13,14 @@ import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { InventoryModule } from "./modules/inventory/inventory.module.js";
 import { OrdersModule } from "./modules/orders/orders.module.js";
 import { AuditModule } from "./modules/audit/audit.module.js";
+import { NotificationsModule } from "./modules/notifications/notifications.module.js";
 
 @Module({})
 export class AppModule {
   static forRoot(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      imports: [AppConfigModule.forRoot(config), ClockModule, PrismaModule, BugLabModule, AuthModule, HealthModule, CatalogModule, InventoryModule, OrdersModule, AdministrationModule, AuditModule],
+      imports: [AppConfigModule.forRoot(config), ClockModule, PrismaModule, BugLabModule, AuthModule, HealthModule, CatalogModule, InventoryModule, OrdersModule, AdministrationModule, AuditModule, NotificationsModule],
       providers: [{ provide: APP_FILTER, useClass: ApiExceptionFilter }],
     };
   }

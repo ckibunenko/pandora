@@ -7,6 +7,7 @@
     "build": "prisma generate && nest build",
     "dev": "prisma generate && nest start --watch --env-file ../../.env",
     "start": "node --env-file-if-exists=../../.env dist/main.js",
+    "worker": "node --env-file-if-exists=../../.env dist/worker.js",
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "prisma": "prisma",
     "db:migrate": "prisma migrate dev",
@@ -19,6 +20,7 @@
     "check:processing": "node --env-file-if-exists=../../.env checks/order-processing.mjs",
     "check:fulfillment": "node --env-file-if-exists=../../.env checks/fulfillment.mjs",
     "check:returns": "node --env-file-if-exists=../../.env checks/returns.mjs",
+    "check:notifications": "node --env-file-if-exists=../../.env checks/notifications.mjs",
     "check:admin": "node --env-file-if-exists=../../.env checks/administration.mjs",
     "check:auth": "node --env-file-if-exists=../../.env checks/auth.mjs",
     "check:bug-lab": "node --env-file-if-exists=../../.env checks/bug-lab.mjs",
@@ -35,6 +37,7 @@
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "cookie-parser": "1.4.7",
+    "nodemailer": "10.0.13",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
     "zod": "4.6.5"

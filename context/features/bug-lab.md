@@ -22,7 +22,7 @@ QA learners get reproducible, realistic defects with a catalog entry, a learner 
   2. A defect requires a database named `pandora_buglab…` (the demo uses `pandora_demo`, and development uses `pandora`).
   3. The database must carry the matching marker `pandora.defect` (set only by the Bug Lab setup tool through `ALTER DATABASE … SET`).
   4. A database with a marker cannot be used by an API without the same defect, and vice versa.
-- **No worker or inbox exists yet.** When they arrive, they must follow the same selection and isolation rules.
+- **Worker and inbox** (added with notifications): `pnpm bug-lab start` also starts a worker with the same defect selection, which refuses the same configurations, delivering to the separate `mailpit-buglab` inbox (SMTP 1026, UI 8026).
 - **The defects** (each is a single, explicitly named place in the code):
 
   | ID | Where | Behavior |

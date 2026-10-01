@@ -15,5 +15,20 @@ services:
       timeout: 3s
       retries: 10
 
+  # Captured inbox for development: the notification worker delivers here (SMTP 1025, web UI 8025).
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
+  # Separate inbox for Bug Lab runs (overview §9): `docker compose --profile bug-lab up -d mailpit-buglab`.
+  mailpit-buglab:
+    image: axllent/mailpit:v1.31.3
+    profiles: [bug-lab]
+    ports:
+      - "127.0.0.1:1026:1025"
+      - "127.0.0.1:8026:8025"
+
 volumes:
   postgres-data:

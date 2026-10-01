@@ -30,6 +30,7 @@ import { Prisma } from "../../generated/prisma/client.js";
 import { PrismaService } from "../../infrastructure/prisma/prisma.service.js";
 import { runSerializable } from "../../infrastructure/prisma/serializable.js";
 import type { AuthContext } from "../auth/auth-context.js";
+import { NotificationOutbox, type OrderRef } from "../notifications/notification-outbox.js";
 
 const ACTOR_SELECT = { select: { id: true, displayName: true } } as const;
 
@@ -181,6 +182,13 @@ export function returnableQuantity(item: OrderRecord["shipments"][number]["items
   return item.quantity - claimed;
 }
 
+export const orderRef = (order: OrderRecord): OrderRef => ({
+  id: order.id,
+  number: order.number,
+  organizationId: order.organization.id,
+  organizationName: order.organization.name,
+});
+
 const outstanding = (line: { quantity: number; shippedQuantity: number; cancelledQuantity: number }) =>
   line.quantity - line.shippedQuantity - line.cancelledQuantity;
 
@@ -254,6 +262,7 @@ export class OrdersService {
     private readonly idempotency: IdempotencyService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly bugLab: BugLab,
+    private readonly outbox: NotificationOutbox,
   ) {}
 
   /** Retailers only ever see their own organization's orders; staff see all. */
@@ -571,6 +580,7 @@ export class OrdersService {
           before: { status: "DRAFT", version: order.version },
           after: { status: "SUBMITTED", version: order.version + 1, lineCount: order.lines.length, totalMinor: Number(total) },
         });
+        await this.outbox.enqueue(tx, { type: "order.submitted", order: orderRef(order), lineCount: order.lines.length, totalMinor: Number(total) });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },
       200,
@@ -682,6 +692,7 @@ export class OrdersService {
           before: { status: "SUBMITTED", version: order.version },
           after: { status: "CONFIRMED", version: order.version + 1, reserved },
         });
+        await this.outbox.enqueue(tx, { type: "order.confirmed", order: orderRef(order) });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },
       200,
@@ -710,6 +721,7 @@ export class OrdersService {
           before: { status: "SUBMITTED", version: order.version },
           after: { status: "REJECTED", version: order.version + 1, reason: input.reason },
         });
+        await this.outbox.enqueue(tx, { type: "order.rejected", order: orderRef(order), reason: input.reason });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },
       200,
@@ -760,7 +772,7 @@ export class OrdersService {
             createdAt: now,
             items: { create: input.items.map((item) => ({ orderLineId: item.orderLineId, quantity: item.quantity })) },
           },
-          select: { number: true },
+          select: { id: true, number: true },
         });
         const shippedBySku: Record<string, number> = {};
         for (const item of input.items) {
@@ -812,6 +824,13 @@ export class OrdersService {
           before: { status: order.status, version: order.version },
           after: { status, version: order.version + 1, shipment: shipment.number, shipped: shippedBySku },
         });
+        await this.outbox.enqueue(tx, {
+          type: "shipment.recorded",
+          order: orderRef(order),
+          shipmentId: shipment.id,
+          shipmentNumber: shipment.number,
+          items: shippedBySku,
+        });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },
       200,
@@ -856,7 +875,8 @@ export class OrdersService {
           if (exceeded.length > 0) {
             throw ApiException.cancellationQuantityExceeded(exceeded);
           }
-          await tx.cancellationRequest.create({
+          const created = await tx.cancellationRequest.create({
+            select: { id: true },
             data: {
               orderId,
               status: "PENDING",
@@ -878,6 +898,13 @@ export class OrdersService {
               scope: input.items ? "selected" : "all_remaining",
               requested: Object.fromEntries(requested.map(({ line, quantity }) => [line.sku ?? line.variant.sku, quantity])),
             },
+          });
+          await this.outbox.enqueue(tx, {
+            type: "cancellation.requested",
+            order: orderRef(order),
+            requestId: created.id,
+            items: Object.fromEntries(requested.map(({ line, quantity }) => [line.sku ?? line.variant.sku, quantity])),
+            reason: input.reason ?? null,
           });
           return this.orderDto(await this.findScoped(tx, orderId, auth));
         },
@@ -978,6 +1005,7 @@ export class OrdersService {
           before: { status: order.status, version: order.version },
           after: { status, version: order.version + 1, requestId, released },
         });
+        await this.outbox.enqueue(tx, { type: "cancellation.decided", order: orderRef(order), requestId, approved: true, items: released, reason: null });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },
       200,
@@ -1005,6 +1033,7 @@ export class OrdersService {
           before: { version: order.version },
           after: { version: order.version + 1, requestId, reason: input.reason },
         });
+        await this.outbox.enqueue(tx, { type: "cancellation.decided", order: orderRef(order), requestId, approved: false, items: {}, reason: input.reason });
         return this.orderDto(await this.findScoped(tx, orderId, auth));
       },
       200,

@@ -48,6 +48,9 @@ export function CatalogLayout() {
               <NavLink to="/audit" data-test="audit-nav">
                 Audit trail
               </NavLink>
+              <NavLink to="/notifications" data-test="notifications-nav">
+                Notifications
+              </NavLink>
             </>
           )}
           {user.role === "administrator" && (

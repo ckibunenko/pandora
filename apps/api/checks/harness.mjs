@@ -66,6 +66,7 @@ export async function startQaApi({ databaseEnv, databasePattern, portEnv, defaul
   return {
     db,
     origin,
+    databaseUrl: env.DATABASE_URL,
     seed,
     call,
     login,

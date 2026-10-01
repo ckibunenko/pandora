@@ -1,137 +1,108 @@
 ## Current Feature
 
-Returns (Phase 3, part 1). A retailer asks to return shipped units, staff approve or reject the whole request, and an approved return gets exactly one receipt with inspection that splits the received units into sellable and damaged stock (overview §6). Notifications (outbox, worker, Mailpit) are part 2 and out of scope here.
+Notifications (Phase 3, part 2). Business events enqueue email jobs in a PostgreSQL outbox in the same transaction as the change; a separate worker process claims committed jobs with a lease, delivers them over SMTP to a captured inbox (Mailpit) outside any business transaction, records every attempt, and retries with a bounded schedule. Staff inspect delivery diagnostics and retry failed jobs manually (overview §2, §3, §7, §9; coding standards §8).
 
 ## Status
 
-Completed — merged to `main` as `e66fb6b` (2026-10-01) through PR #7; CI run `36828935735` passed all 3 jobs.
+In progress on `feature/notifications`.
 
 ## Goal
 
-A shipped unit can come back once, and only once. Every return is traceable from the shipment item through the decision and inspection to the inventory movement. Sellable and damaged stock change only at receipt, and the order's fulfillment status never changes.
+Every committed business event that someone needs to act on or know about produces exactly one durable job per recipient. Delivery failures never undo or repeat the business change, and every attempt, including ambiguous ones, is visible.
 
 ## Scope and decisions (2026-10-01)
 
-- Branch: `feature/returns`.
-- **Eligible orders:** `partially_shipped`, `shipped`, and `closed_partial`, which are the statuses that have shipments. Other statuses return 409 `INVALID_ORDER_TRANSITION`. There is no return window and no expiry; refunds stay out of scope (overview §3).
-- **Return request** (retailer, own organization):
-  - A required reason (3–500 characters).
-  - Items: `[{shipmentItemId, quantity}]`, at least 1, each shipment item once, quantity 1–10,000. Each item references a shipment item of the same order (422 otherwise).
-  - Several requests per order may be open at the same time; entitlement keeps them consistent.
-- **Entitlement** (overview §6), per shipment item: quantities in pending and approved returns, plus received units in completed returns, never exceed the shipped quantity. Rejected returns do not count. A violation returns 409 `RETURN_QUANTITY_EXCEEDED` with details `shipments.<SH-number>.<SKU>`. It is checked in the Serializable transaction and again by a database trigger.
-- **Decision** (staff): approve the whole request, or reject it with a reason (3–500 characters). There is no partial approval. Approval does not touch stock.
-- **Receipt** (staff, once per approved return):
-  - Lists every item of the return exactly once with `sellableQuantity` and `damagedQuantity` (each ≥ 0); otherwise 422.
-  - Sellable plus damaged per item may not exceed the approved quantity: 409 `RETURN_QUANTITY_EXCEEDED`.
-  - A short receipt (fewer units than approved on any item) requires `discrepancyReason` (3–500 characters): 422 otherwise. It is optional on a full receipt.
-  - Sellable units increase sellable stock and damaged units increase damaged stock, as `return` movements referencing the return number.
-  - A completed return counts its received units, not its requested quantity, toward entitlement.
-- **New error code `INVALID_RETURN_TRANSITION`** (409): deciding a return that is not pending, or receiving one that is not approved.
-- **Statuses:** `pending` → `approved` | `rejected`; `approved` → `completed`. `rejected` and `completed` are final.
-- **Numbers:** `RT-001001` onward from a database sequence; lower numbers are reserved for the seed.
-- **The order itself is untouched:** no status, version, or line change (the database rejects changes to terminal orders anyway). Concurrency is handled by the return's own status, Serializable transactions, and the entitlement trigger.
-- **Orders list:** staff can filter to orders with open returns (`returns=open`: pending or approved), and the summary shows the open return count.
-- **Out of scope:** refunds, notifications, partial approval, editing or withdrawing a request, return windows, carriers, Bug Lab changes.
+- Branch: `feature/notifications`.
+- **Events and recipients.** Overview §11 left these to this feature's contract. Retailer recipients are the active retailer users of the order's organization; staff recipients are active operators and administrators. Inactive users and inactive organizations receive nothing.
+
+| Event | Trigger | Recipients |
+|---|---|---|
+| `order.submitted` | Retailer submits an order | Staff |
+| `order.confirmed` | Staff confirm and reserve | Retailer |
+| `order.rejected` | Staff reject with a reason | Retailer |
+| `shipment.recorded` | Staff record a shipment | Retailer |
+| `cancellation.requested` | Retailer requests cancellation after confirmation | Staff |
+| `cancellation.decided` | Staff approve or reject that request | Retailer |
+| `return.requested` | Retailer requests a return | Staff |
+| `return.decided` | Staff approve or reject a return | Retailer |
+| `return.received` | Staff record the return receipt | Retailer |
+
+- **Outbox** (overview §7):
+  - Jobs are written inside the business transaction, after the audit event. A rollback leaves no job.
+  - Jobs are deduplicated by business event key and recipient (unique `(event_key, recipient_user_id)`).
+  - Subject and plain-text body are rendered at enqueue time from committed data, together with the recipient's email snapshot and the request's correlation ID.
+- **Worker** (coding standards §8):
+  - A separate process, `node dist/worker.js`, built from `apps/api/src/worker.ts`. **Decision:** it lives in `apps/api` instead of the target `apps/notification-worker`, because it shares the generated Prisma client, configuration validation, clock, and Bug Lab guard. It contains no domain rules.
+  - It claims due jobs with `FOR UPDATE SKIP LOCKED`, sets a lease (owner and expiry), and records an `in_progress` attempt before sending. It sends outside every transaction and then records the outcome only while it still owns the lease.
+  - **Retries:** at most 5 attempts per job, with configurable delays (default 1 min, 5 min, 15 min, 1 h). SMTP 4xx and connection errors are retried; SMTP 5xx fails the job at once.
+  - **Ambiguous attempts:** when a lease expires before the outcome is recorded (crash or hang), the next claim marks that attempt `ambiguous` (the message may or may not have been delivered) and counts it. We never claim exactly-once delivery.
+  - It refuses the same Bug Lab configurations as the API (production, non-`pandora_buglab…` database, marker mismatch).
+- **Controlled delivery failures** (overview §9): `NOTIFICATION_FAILURE_MODE=transient|permanent` replaces the transport with a failing adapter. It is refused in production.
+- **Manual retry** (overview §7): `POST /api/notifications/:id/retry` with an Idempotency-Key, staff only, for `failed` jobs only. It grants exactly one more attempt now. Otherwise it returns 409 `NOTIFICATION_NOT_RETRYABLE`. Audited as entity `notification`, which operators can also see in audit search.
+- **Diagnostics** (overview §3: operator operational scope, administrator full scope):
+  - Staff list jobs (filters: status, event type; shared 20/50/100 pagination, newest first) and open a job with its attempts.
+  - Operators see event, order, recipient name, status, attempts, errors, and times. Only administrators also see the recipient email and the message body. Retailers receive 403.
+- **Inbox:** Mailpit in `docker-compose.yml` (SMTP 1025, UI 8025) for development and in `compose.demo.yml` for the demo. The Bug Lab gets a separate inbox (`mailpit-buglab`, SMTP 1026, UI 8026, Compose profile `bug-lab`), and `pnpm bug-lab start` also starts a worker.
+- **Demo reset:** stops the API and the worker, truncates the notification tables with the other fixtures, and starts both again.
+- **Dependency:** `nodemailer` for SMTP (MIT, no paid service).
+- **Out of scope:** user notification preferences, HTML email, real email providers, links with tokens, notification UI for retailers, and notifications for draft edits or whole-order cancellation before confirmation.
 
 ## Data and invariants
 
-- **ReturnRequest:** number, order, status, reason, requester and time; decider, time, and decision reason (required on rejection); receiver, time, and discrepancy reason. A CHECK makes each status carry exactly its data.
-- **ReturnRequestItem:** request, shipment item, quantity > 0, and `receivedSellable`/`receivedDamaged` (both null until receipt, then both ≥ 0 with a sum ≤ quantity).
-- **Triggers:**
-  - items belong to shipments of the request's order;
-  - requests move only along the allowed transitions, keep their identity, and are never deleted;
-  - items are never deleted and receive their quantities once, only while the request is approved;
-  - completing a request requires every item to be received and a discrepancy reason when any item is short;
-  - the entitlement rule above.
-- **Movements:** new type `RETURN`, bucket `SELLABLE` or `DAMAGED`, delta > 0, no reservation, attributed to the receiving staff member. The enum value gets its own migration first.
-- **Demo reset** truncates the new tables and restarts the return sequence. Seed numbers stay below 1001.
-
-## Consistency rules
-
-- Every mutation (request, approve, reject, receive) requires an Idempotency-Key and CSRF, and runs Serializable with bounded retry and atomic audit.
-- **Order of checks:**
-  - Request: 404 → `INVALID_ORDER_TRANSITION` → 422 → `RETURN_QUANTITY_EXCEEDED`.
-  - Decision: 404 (order, then return) → `INVALID_RETURN_TRANSITION` → 422.
-  - Receipt: 404 (order, then return) → `INVALID_RETURN_TRANSITION` → 422 (unknown or missing items) → `RETURN_QUANTITY_EXCEEDED` → 422 (missing discrepancy reason on a short receipt).
-- A rejected or failed operation changes no stock, movement, or audit.
+- **NotificationJob:** event type and key, order, recipient and email snapshot, subject and body, status (`pending`, `sending`, `sent`, `failed`), attempt count and maximum, next attempt time, lease owner and expiry, last error, correlation ID, created and sent times.
+  - CHECKs: `sending` needs a lease and every other status has none; `sent` needs a sent time; the attempt count never exceeds the maximum.
+- **NotificationAttempt:** job, number (unique per job), worker ID, start and finish times, outcome (`in_progress`, `sent`, `failed`, `ambiguous`), and error.
+  - A trigger allows only `in_progress` → final outcome, once. Attempts are never deleted.
+- Business tables, stock, and movements are never written by the worker.
 
 ## API contract
 
 | Endpoint | Access | Behavior |
 |---|---|---|
-| `POST /api/orders/:orderId/returns` | Retailer (own organization) | `reason`, `items[{shipmentItemId, quantity}]`; 200 with the order |
-| `POST /api/orders/:orderId/returns/:returnId/approve` | Operator, administrator | `{}`; 200 |
-| `POST /api/orders/:orderId/returns/:returnId/reject` | Operator, administrator | `reason`; 200 |
-| `POST /api/orders/:orderId/returns/:returnId/receive` | Operator, administrator | `items[{returnItemId, sellableQuantity, damagedQuantity}]`, optional `discrepancyReason`; 200 |
-
-- **Order responses add:**
-  - per shipment item: `id` and `returnableQuantity`;
-  - `returns` (number, status, reason, requester, decision, receipt, and items with shipment number, SKU, quantity, and received split).
-- **Order summaries add** `openReturnCount`. `GET /api/orders` accepts `returns=open`.
-
-## Audit
-
-Order audit events (entity `order`, so operators see them in audit search):
-- `return_requested`: number, reason, and quantities per shipment and SKU;
-- `return_approved`;
-- `return_rejected`: reason;
-- `return_received`: sellable and damaged per SKU, and the discrepancy reason.
+| `GET /api/notifications` | Operator, administrator | `status`, `eventType`, `page`, `pageSize`; summaries |
+| `GET /api/notifications/:id` | Operator, administrator | Detail with attempts; email and body for administrators only |
+| `POST /api/notifications/:id/retry` | Operator, administrator | CSRF and Idempotency-Key; `failed` → `pending`; 200 with the detail |
 
 ## UI acceptance criteria
 
-- **Retailer**, on an eligible order with returnable units:
-  - **Request a return** opens a form with one quantity per shipment item (shipment number, SKU, product, shipped, returnable). Quantities default to 0.
-  - The reason is required. Client-side validation checks 0 to returnable, at least one unit overall, and reason length.
-  - The button names the total, for example "Send return request for 2 units".
-- **Staff:**
-  - Each pending return has a review panel with **Approve** and **Reject** (reason required).
-  - Each approved return has a receipt form: sellable (default: the approved quantity) and damaged (default 0) per item, a discrepancy reason that becomes required when short, and **Record receipt of N units**.
-- **All roles:** a Returns section lists every return with status text, items, decision, and the received split. Returns are shown separately from fulfillment quantities.
-- **Orders list:** a **Returns** filter (all or open) and an open-returns badge on rows.
-- **Inventory:** return movements appear as "Return".
-- **Selectors:**
-  - Request: `return-request`, `return-request-panel`, `return-request-line` (`data-shipment-number`, `data-sku`), `return-request-quantity`, `return-request-reason`, `return-request-submit`.
-  - Review: `return-review` (`data-return-number`), `return-approve`, `return-reject-reason`, `return-reject`.
-  - Receipt: `return-receipt` (`data-return-number`), `return-receipt-line` (`data-sku`), `return-receipt-sellable`, `return-receipt-damaged`, `return-receipt-discrepancy`, `return-receipt-submit`.
-  - Lists and errors: `return-list`, `return-row` (`data-return-number`, `data-status`), `return-error`, `orders-returns-filter`, `order-open-returns`.
-  - Existing selectors are unchanged.
-- Keyboard access, field-associated errors, and a 390 px layout without horizontal overflow.
-
-## Deterministic seed (addition, created only if missing)
-
-`RT-000001` on `PO-000008`: pending, 1 × `LOV-EN-STD` from `SH-000001`, reason "One box arrived with a crushed corner".
+- Staff navigation gains **Notifications**.
+- **List:** status and event filters in the URL, status text (not only color), attempts as "n of m", the last error, and pagination.
+- **Detail:** the attempts table, the correlation ID, a link to the order, **Retry delivery** for failed jobs (with replay-safe feedback), and the email and body for administrators only.
+- **Selectors:** `notifications-nav`, `notifications-status-filter`, `notifications-event-filter`, `notifications-total`, `notification-row` (`data-notification-id`, `data-status`), `notification-link`, `notification-status`, `notification-recipient-email`, `notification-body`, `notification-attempt-row` (`data-outcome`), `notification-retry`, `notification-retry-error`.
+- Keyboard access, loading, empty, and error states, and a 390 px layout without page overflow.
 
 ## Verification
 
-- **API/PostgreSQL** (new `apps/api/checks/returns.mjs`, `check:returns`):
-  - Access: only the owning retailer requests (other organization 404, staff 403); only staff decide and receive; CSRF and Idempotency-Key are required.
-  - Validation without effects: ineligible statuses, unknown or foreign shipment items, duplicates, bad quantities, a missing reason, and over-entitlement.
-  - The full flow: request, approve, full receipt (sellable only), and stock and movements; then a short receipt with sellable and damaged units, which requires a discrepancy reason.
-  - Rejection frees entitlement; a completed short return counts only the received units.
-  - Transitions: approving, rejecting, or receiving twice, and receiving a pending or rejected return, return `INVALID_RETURN_TRANSITION`.
-  - The order status and version never change; replays return the same response; audit events are recorded.
-  - Concurrency: parallel requests for the last returnable units leave exactly one successful; parallel receipts of one return add stock once.
-  - Rollback: an injected audit failure on receipt leaves no movement, stock, or status change.
-  - Database: constraints reject over-entitlement, a second receipt, deleted items, a cross-order item, and invalid `RETURN` movements.
-  - Invariants: movement sums equal sellable and damaged stock.
-  - OpenAPI documents the routes and the Idempotency-Key header.
-- **Browser** (new `apps/web/checks/returns-browser.mjs`, own database): the retailer requests a return with validation; staff approve and record a short receipt with a discrepancy reason; staff reject the seeded return; the Returns list, orders filter, inventory movements, keyboard access, and 390 px layout; no page errors.
-- **Regressions:** demo reset (new tables), the orders list, and all existing checks. `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm check:all` pass.
+- **API, PostgreSQL, and worker** (new `apps/api/checks/notifications.mjs`, `check:notifications`, with an in-process SMTP stub that can accept, return 451 or 550, or hang):
+  - Enqueue: every event creates jobs for exactly the right recipients; a rollback creates none; idempotent replays and the unique key prevent duplicates.
+  - Delivery: SMTP messages carry the right recipient, subject, and correlation header; jobs become `sent` with one `sent` attempt.
+  - Retries: a transient failure, then success; a permanent failure stops at once; exhausted retries end `failed`. Business state is never changed.
+  - A lease expiry after a killed worker yields an `ambiguous` attempt and a later delivery. Two workers in parallel deliver each job once.
+  - Diagnostics access and redaction, filters and pagination, and manual retry (replay, wrong state 409, missing key 400, audit).
+  - The worker refuses Bug Lab misconfiguration and a failure mode in production. Database constraints hold. OpenAPI documents the routes.
+- **Browser** (new `apps/web/checks/notifications-browser.mjs`, its own database and a worker with a permanent failure mode): a submitted order produces failed staff jobs; the operator and administrator views (redaction); the detail with attempts; manual retry; filters; keyboard access and 390 px; no page errors.
+- **Regressions:** demo reset (new tables, worker lifecycle), Bug Lab, and all existing checks. `pnpm typecheck`, `pnpm lint`, `pnpm build`, and `pnpm check:all` pass.
 
 ## Implementation results (2026-10-01)
 
-- Implemented as specified. Full evidence and reproduction: [verification](features/returns-verification.md).
-- **API/PostgreSQL:** the new `check:returns` passes 11 of 11, covering access, validation without effects, the full and short flows, transitions, entitlement, concurrency, rollback, and database constraints. The demo reset check now covers the new tables and sequence.
-- **Browser:** the new `returns` group passes 8 of 8 on its own database.
-- **Full `pnpm check:all`** (run `20261001_070746`): 18 of 18 suites passed, including the build. `pnpm typecheck` and `pnpm lint` pass. `prisma migrate diff` from a migrated QA database to the schema is empty.
-- **Design notes:**
-  - Receipt validation reports a missing discrepancy reason (422) after an over-quantity (409), because shortness is only meaningful once quantities fit.
-  - Return actions are keyed by return status in the UI, because returns do not bump the order version.
-  - Staff return panels sit above the shipment form, next to cancellation decisions.
+- Implemented as specified. Full evidence and reproduction: [verification](features/notifications-verification.md).
+- **API/PostgreSQL and worker:** the new `check:notifications` passes 12 of 12 against an SMTP stub and real worker processes, including an ambiguous lease expiry, a graceful stop, and two parallel workers.
+- **Browser:** the new `notifications` group passes 4 of 4 with a worker in the permanent failure mode.
+- **Bug Lab:** a new group covers worker refusals. The demo reset check covers the new tables.
+- **Docker demo lifecycle:** 5 of 5 on a disposable QA project. The worker stops and starts with the API, and a post-reset order reaches the demo Mailpit.
+- **Full `pnpm check:all`** (run `20261001_073834`): 20 of 20 suites passed. `pnpm typecheck` and `pnpm lint` pass, and `prisma migrate diff` is empty.
+- **Found and fixed during verification:**
+  - **Worker shutdown:** the real-Mailpit run showed that a stopped worker left claimed jobs `sending` until lease expiry. They are now released at once on shutdown.
+  - **Stale UI:** the browser check showed that the detail page did not refresh after a retry. Both pages now refresh while jobs are in flight.
+  - **Navigation:** the extra administrator link made navigation items break mid-word. They now wrap as whole items.
+- **Contract additions:**
+  - `NOTIFICATION_NOT_RETRYABLE`;
+  - the audit entity `notification`, also visible to operators;
+  - `nodemailer@10.0.13`.
 
 ## Previous feature
 
-[Phase 2 operational completion](features/phase-2-operations.md) (audit search and complete pagination) merged as `5868e8e` through PR #6; [verification](features/phase-2-operations-verification.md). Earlier: [line-level cancellation](features/line-cancellation.md), [UI polish](features/ui-polish.md), [Bug Lab](features/bug-lab.md), [sign-in hardening](features/auth-hardening.md), [CI](features/ci.md), [demo reset](features/demo-reset.md), [administration](features/admin-management.md), [fulfillment](features/fulfillment.md), [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth](features/auth-sessions.md). Phases 1 and 2 are complete; after returns, Phase 3 continues with notifications.
+[Returns](features/returns.md) merged as `e66fb6b` through PR #7; [verification](features/returns-verification.md). Earlier features are listed in the history below.
 
 ## History
 

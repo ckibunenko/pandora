@@ -24,6 +24,8 @@ import { OrderPage } from "../features/orders/OrderPage";
 import { OrdersPage } from "../features/orders/OrdersPage";
 import { AuditPage } from "../features/audit/AuditPage";
 import { AuditEventPage } from "../features/audit/AuditEventPage";
+import { NotificationPage } from "../features/notifications/NotificationPage";
+import { NotificationsPage } from "../features/notifications/NotificationsPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -84,6 +86,13 @@ const router = createBrowserRouter([
                 children: [
                   { path: "/audit", element: <AuditPage /> },
                   { path: "/audit/:eventId", element: <AuditEventPage /> },
+                ],
+              },
+              {
+                element: <RequireStaff area="Notification diagnostics" />,
+                children: [
+                  { path: "/notifications", element: <NotificationsPage /> },
+                  { path: "/notifications/:notificationId", element: <NotificationPage /> },
                 ],
               },
             ],

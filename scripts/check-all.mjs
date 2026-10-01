@@ -36,6 +36,7 @@ const API_SUITES = [
   { name: "processing", script: "check:processing", databaseEnv: "PROCESSING_CHECK_DATABASE", prefix: "pandora_processing_check" },
   { name: "fulfillment", script: "check:fulfillment", databaseEnv: "FULFILLMENT_CHECK_DATABASE", prefix: "pandora_fulfillment_check" },
   { name: "returns", script: "check:returns", databaseEnv: "RETURNS_CHECK_DATABASE", prefix: "pandora_returns_check" },
+  { name: "notifications", script: "check:notifications", databaseEnv: "NOTIFICATIONS_CHECK_DATABASE", prefix: "pandora_notifications_check" },
   { name: "admin", script: "check:admin", databaseEnv: "ADMIN_CHECK_DATABASE", prefix: "pandora_admin_check" },
   { name: "demo-reset", script: "check:demo-reset", databaseEnv: "DEMO_CHECK_DATABASE", prefix: "pandora_demo_check" },
   { name: "auth", script: "check:auth", databaseEnv: "AUTH_CHECK_DATABASE", prefix: "pandora_auth_check" },
@@ -46,6 +47,12 @@ const BROWSER_GROUPS = [
   { name: "operations", suites: [{ file: "operations-browser", evidenceEnv: "OPERATIONS_CHECK_EVIDENCE" }] },
   { name: "fulfillment", suites: [{ file: "fulfillment-browser", evidenceEnv: "FULFILLMENT_CHECK_EVIDENCE" }] },
   { name: "returns", suites: [{ file: "returns-browser", evidenceEnv: "RETURNS_CHECK_EVIDENCE" }] },
+  // Runs a notification worker with the controlled permanent-failure adapter (no SMTP server needed).
+  {
+    name: "notifications",
+    suites: [{ file: "notifications-browser", evidenceEnv: "NOTIFICATIONS_CHECK_EVIDENCE" }],
+    worker: { NOTIFICATION_FAILURE_MODE: "permanent", NOTIFICATION_SMTP_URL: "smtp://127.0.0.1:1", NOTIFICATION_POLL_INTERVAL_MS: "200" },
+  },
   {
     name: "processing",
     suites: [
@@ -210,6 +217,8 @@ async function runBrowserGroups() {
         if ((await run(process.execPath, ["dist/seed/seed.js"], { cwd: apiDir, env, quiet: true })) !== 0) return false;
         const apiLog = [];
         const api = background(process.execPath, ["dist/main.js"], { cwd: apiDir, env, log: apiLog });
+        const workerLog = [];
+        const worker = group.worker ? background(process.execPath, ["dist/worker.js"], { cwd: apiDir, env: { ...env, ...group.worker }, log: workerLog }) : undefined;
         try {
           await waitUntilUp(`http://127.0.0.1:${QA_API_PORT}/api/health/ready`, "QA API", api.child, apiLog);
           let ok = true;
@@ -221,8 +230,13 @@ async function runBrowserGroups() {
               ok = false;
             }
           }
+          if (worker && worker.child.exitCode !== null) {
+            console.error(`Notification worker exited early:\n${workerLog.join("").slice(-3000)}`);
+            ok = false;
+          }
           return ok;
         } finally {
+          await worker?.stop();
           await api.stop();
         }
       });

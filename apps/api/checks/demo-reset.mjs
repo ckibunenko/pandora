@@ -49,6 +49,7 @@ try {
   await db.idempotencyRecord.create({ data: { organizationId: ORG, actorId: ADMIN, operation: "qa", target: "qa", key: "qa-key", requestHash: "a".repeat(64), status: "COMPLETED", leaseExpiresAt: now, createdAt: now, completedAt: now, responseStatus: 200, responseBody: { old: true } } });
   await db.$queryRaw`SELECT nextval('orders_number_seq')`;
   await db.$queryRaw`SELECT nextval('returns_number_seq')`;
+  await db.notificationJob.create({ data: { eventType: "order.confirmed", eventKey: "qa:before-reset", orderId: (await db.order.findFirstOrThrow()).id, recipientUserId: ADMIN, recipientEmail: "admin@pandora.test", subject: "QA", body: "QA", status: "PENDING", maxAttempts: 5, nextAttemptAt: now, correlationId: "qa", createdAt: now } });
   await db.returnRequest.update({ where: { number: "RT-000001" }, data: { status: "REJECTED", decidedAt: now, decidedById: ADMIN, decisionReason: "QA change before reset" } });
   const changed = await snapshot();
 
@@ -80,6 +81,7 @@ try {
     await restoreDemoData(db, database, hash);
     assert.equal(await db.session.count(), 0);
     assert.equal(await db.idempotencyRecord.count(), 0);
+    assert.equal(await db.notificationJob.count(), 0, "queued notifications are cleared with the fixtures");
     assert.equal(await db.organization.count(), 4);
     assert.equal((await db.user.findUniqueOrThrow({ where: { id: ADMIN } })).displayName, "Ada Administrator");
     assert.deepEqual(await db.inventoryItem.findMany({ select: { variantId: true, sellable: true, reserved: true, damaged: true }, orderBy: { variantId: "asc" } }), inventory);
