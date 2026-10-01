@@ -86,7 +86,15 @@ const ORDER_SELECT = {
       number: true,
       createdAt: true,
       createdBy: ACTOR_SELECT,
-      items: { select: { orderLineId: true, quantity: true, orderLine: { select: { sku: true } } } },
+      items: {
+        select: {
+          id: true,
+          orderLineId: true,
+          quantity: true,
+          orderLine: { select: { sku: true } },
+          returnItems: { select: { quantity: true, receivedSellable: true, receivedDamaged: true, request: { select: { status: true } } } },
+        },
+      },
     },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   },
@@ -104,9 +112,37 @@ const ORDER_SELECT = {
     },
     orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
   },
+  returnRequests: {
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      reason: true,
+      requestedAt: true,
+      decidedAt: true,
+      decisionReason: true,
+      receivedAt: true,
+      discrepancyReason: true,
+      requestedBy: ACTOR_SELECT,
+      decidedBy: ACTOR_SELECT,
+      receivedBy: ACTOR_SELECT,
+      items: {
+        select: {
+          id: true,
+          shipmentItemId: true,
+          quantity: true,
+          receivedSellable: true,
+          receivedDamaged: true,
+          shipmentItem: { select: { orderLineId: true, shipment: { select: { number: true } }, orderLine: { select: { sku: true, variantId: true } } } },
+        },
+        orderBy: { id: "asc" },
+      },
+    },
+    orderBy: [{ requestedAt: "asc" }, { id: "asc" }],
+  },
 } satisfies Prisma.OrderSelect;
 
-type OrderRecord = Prisma.OrderGetPayload<{ select: typeof ORDER_SELECT }>;
+export type OrderRecord = Prisma.OrderGetPayload<{ select: typeof ORDER_SELECT }>;
 type LineRecord = OrderRecord["lines"][number];
 type DbStatus = OrderRecord["status"];
 
@@ -131,7 +167,19 @@ const DB_STATUS: Record<OrderStatus, DbStatus> = {
   closed_partial: "CLOSED_PARTIAL",
 };
 const REQUEST_STATUS = { PENDING: "pending", APPROVED: "approved", REJECTED: "rejected" } as const;
+const RETURN_STATUS = { PENDING: "pending", APPROVED: "approved", REJECTED: "rejected", COMPLETED: "completed" } as const;
+const OPEN_RETURN: readonly OrderRecord["returnRequests"][number]["status"][] = ["PENDING", "APPROVED"];
 const OPEN_FOR_FULFILLMENT: readonly DbStatus[] = ["CONFIRMED", "PARTIALLY_SHIPPED"];
+
+/** Units of a shipment item still free to return: rejected returns free theirs, completed ones count what arrived. */
+export function returnableQuantity(item: OrderRecord["shipments"][number]["items"][number]): number {
+  const claimed = item.returnItems.reduce((sum, returned) => {
+    if (returned.request.status === "REJECTED") return sum;
+    if (returned.request.status === "COMPLETED") return sum + (returned.receivedSellable ?? 0) + (returned.receivedDamaged ?? 0);
+    return sum + returned.quantity;
+  }, 0);
+  return item.quantity - claimed;
+}
 
 const outstanding = (line: { quantity: number; shippedQuantity: number; cancelledQuantity: number }) =>
   line.quantity - line.shippedQuantity - line.cancelledQuantity;
@@ -213,7 +261,7 @@ export class OrdersService {
     return auth.user.role === "retailer" ? { organizationId: auth.user.organization.id } : {};
   }
 
-  private orderDto(order: OrderRecord): Order {
+  orderDto(order: OrderRecord): Order {
     const lines = order.lines
       .map((line) => lineDto(line, order.status, this.bugLab))
       .sort((a, b) => (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0));
@@ -246,7 +294,13 @@ export class OrdersService {
         number: shipment.number,
         createdAt: shipment.createdAt.toISOString(),
         createdBy: shipment.createdBy,
-        items: shipment.items.map((item) => ({ orderLineId: item.orderLineId, sku: item.orderLine.sku ?? "", quantity: item.quantity })),
+        items: shipment.items.map((item) => ({
+          id: item.id,
+          orderLineId: item.orderLineId,
+          sku: item.orderLine.sku ?? "",
+          quantity: item.quantity,
+          returnableQuantity: returnableQuantity(item),
+        })),
       })),
       cancellationRequests: order.cancellationRequests.map((request) => ({
         id: request.id,
@@ -259,10 +313,34 @@ export class OrdersService {
         decisionReason: request.decisionReason,
         items: request.items.map((item) => ({ orderLineId: item.orderLineId, sku: item.orderLine.sku ?? "", quantity: item.quantity })),
       })),
+      returns: order.returnRequests.map((request) => ({
+        id: request.id,
+        number: request.number,
+        status: RETURN_STATUS[request.status],
+        reason: request.reason,
+        requestedBy: request.requestedBy,
+        requestedAt: request.requestedAt.toISOString(),
+        decidedBy: request.decidedBy,
+        decidedAt: request.decidedAt?.toISOString() ?? null,
+        decisionReason: request.decisionReason,
+        receivedBy: request.receivedBy,
+        receivedAt: request.receivedAt?.toISOString() ?? null,
+        discrepancyReason: request.discrepancyReason,
+        items: request.items.map((item) => ({
+          id: item.id,
+          shipmentItemId: item.shipmentItemId,
+          shipmentNumber: item.shipmentItem.shipment.number,
+          orderLineId: item.shipmentItem.orderLineId,
+          sku: item.shipmentItem.orderLine.sku ?? "",
+          quantity: item.quantity,
+          receivedSellable: item.receivedSellable,
+          receivedDamaged: item.receivedDamaged,
+        })),
+      })),
     };
   }
 
-  private async findScoped(tx: Prisma.TransactionClient, orderId: string, auth: AuthContext): Promise<OrderRecord> {
+  async findScoped(tx: Prisma.TransactionClient, orderId: string, auth: AuthContext): Promise<OrderRecord> {
     const order = await tx.order.findFirst({ where: { id: orderId, ...this.scope(auth) }, select: ORDER_SELECT });
     if (!order) {
       throw ApiException.notFound("Order not found.");
@@ -274,6 +352,7 @@ export class OrdersService {
     const where: Prisma.OrderWhereInput = {
       ...this.scope(auth),
       ...(query.status ? { status: DB_STATUS[query.status] } : {}),
+      ...(query.returns === "open" ? { returnRequests: { some: { status: { in: [...OPEN_RETURN] } } } } : {}),
     };
     // Both queries observe the same snapshot so the total matches the page.
     const [total, orders] = await this.prisma.$transaction(
@@ -309,6 +388,7 @@ export class OrdersService {
           updatedAt: dto.updatedAt,
           submittedAt: dto.submittedAt,
           lineCount: dto.lines.length,
+          openReturnCount: order.returnRequests.filter((request) => OPEN_RETURN.includes(request.status)).length,
         };
       }),
       page: query.page,

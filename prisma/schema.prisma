@@ -54,6 +54,9 @@ model User {
   createdShipments       Shipment[]
   requestedCancellations CancellationRequest[] @relation("CancellationRequestedBy")
   decidedCancellations   CancellationRequest[] @relation("CancellationDecidedBy")
+  requestedReturns       ReturnRequest[]       @relation("ReturnRequestedBy")
+  decidedReturns         ReturnRequest[]       @relation("ReturnDecidedBy")
+  receivedReturns        ReturnRequest[]       @relation("ReturnReceivedBy")
 
   @@index([organizationId])
   @@map("users")
@@ -156,6 +159,7 @@ enum MovementType {
   RESERVATION
   SHIPMENT
   RELEASE
+  RETURN
 }
 
 enum StockBucket {
@@ -275,6 +279,7 @@ model Order {
   lines                OrderLine[]
   shipments            Shipment[]
   cancellationRequests CancellationRequest[]
+  returnRequests       ReturnRequest[]
 
   @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
@@ -346,18 +351,19 @@ model Shipment {
 }
 
 model ShipmentItem {
-  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  shipmentId  String    @map("shipment_id") @db.Uuid
-  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
-  orderLineId String    @map("order_line_id") @db.Uuid
-  orderLine   OrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  id          String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  shipmentId  String              @map("shipment_id") @db.Uuid
+  shipment    Shipment            @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  orderLineId String              @map("order_line_id") @db.Uuid
+  orderLine   OrderLine           @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
   quantity    Int
+  returnItems ReturnRequestItem[]
 
   @@unique([shipmentId, orderLineId])
   @@map("shipment_items")
 }
 
-/// A retailer's request to cancel all remaining quantities of a confirmed order; staff approve or reject it whole.
+/// A retailer's request to cancel selected unshipped quantities of a confirmed order; staff approve or reject it whole.
 model CancellationRequest {
   id             String                    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orderId        String                    @map("order_id") @db.Uuid
@@ -387,4 +393,53 @@ model CancellationRequestItem {
 
   @@unique([requestId, orderLineId])
   @@map("cancellation_request_items")
+}
+
+enum ReturnRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+/// A retailer's request to send shipped units back; staff approve or reject it whole, then record one receipt.
+model ReturnRequest {
+  id                String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  number            String              @unique @default(dbgenerated("('RT-'::text || lpad((nextval('returns_number_seq'::regclass))::text, 6, '0'::text))")) @db.VarChar(20)
+  orderId           String              @map("order_id") @db.Uuid
+  order             Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status            ReturnRequestStatus
+  reason            String              @db.VarChar(500)
+  requestedById     String              @map("requested_by_id") @db.Uuid
+  requestedBy       User                @relation("ReturnRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedAt       DateTime            @map("requested_at") @db.Timestamptz(3)
+  decidedById       String?             @map("decided_by_id") @db.Uuid
+  decidedBy         User?               @relation("ReturnDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+  decidedAt         DateTime?           @map("decided_at") @db.Timestamptz(3)
+  decisionReason    String?             @map("decision_reason") @db.VarChar(500)
+  receivedById      String?             @map("received_by_id") @db.Uuid
+  receivedBy        User?               @relation("ReturnReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict)
+  receivedAt        DateTime?           @map("received_at") @db.Timestamptz(3)
+  discrepancyReason String?             @map("discrepancy_reason") @db.VarChar(500)
+  items             ReturnRequestItem[]
+
+  @@index([orderId, requestedAt])
+  @@index([status])
+  @@map("return_requests")
+}
+
+/// Received quantities stay null until the single receipt; their sum never exceeds the approved quantity.
+model ReturnRequestItem {
+  id               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  requestId        String        @map("request_id") @db.Uuid
+  request          ReturnRequest @relation(fields: [requestId], references: [id], onDelete: Restrict)
+  shipmentItemId   String        @map("shipment_item_id") @db.Uuid
+  shipmentItem     ShipmentItem  @relation(fields: [shipmentItemId], references: [id], onDelete: Restrict)
+  quantity         Int
+  receivedSellable Int?          @map("received_sellable")
+  receivedDamaged  Int?          @map("received_damaged")
+
+  @@unique([requestId, shipmentItemId])
+  @@index([shipmentItemId])
+  @@map("return_request_items")
 }

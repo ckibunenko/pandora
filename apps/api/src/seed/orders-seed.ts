@@ -16,6 +16,8 @@ interface SeedOrder {
   shipment?: { number: string; quantities: Record<string, number> };
   /** A retailer cancellation request left pending after confirmation. */
   pendingCancellationReason?: string;
+  /** A retailer return of shipped units left pending, with a fixed number. */
+  pendingReturn?: { number: string; reason: string; quantities: Record<string, number> };
 }
 
 const ORDERS: readonly SeedOrder[] = [
@@ -94,6 +96,7 @@ const ORDERS: readonly SeedOrder[] = [
     createdAt: "2026-01-17T09:00:00.000Z",
     lines: [{ sku: "LOV-EN-STD", quantity: 5 }],
     shipment: { number: "SH-000001", quantities: { "LOV-EN-STD": 2 } },
+    pendingReturn: { number: "RT-000001", reason: "One box arrived with a crushed corner", quantities: { "LOV-EN-STD": 1 } },
   },
   {
     n: 9,
@@ -270,6 +273,28 @@ export async function seedOrders(
         }
       }
       await tx.order.update({ where: { id }, data: { status: fixture.status, version: 4, updatedAt: hour(3) } });
+    }
+    if (fixture.pendingReturn) {
+      const pending = fixture.pendingReturn;
+      const shipmentItems = await tx.shipmentItem.findMany({
+        where: { shipment: { orderId: id } },
+        select: { id: true, orderLine: { select: { sku: true } } },
+      });
+      await tx.returnRequest.create({
+        data: {
+          number: pending.number,
+          orderId: id,
+          status: "PENDING",
+          reason: pending.reason,
+          requestedById: retailer.userId,
+          requestedAt: hour(4),
+          items: {
+            create: shipmentItems
+              .filter((item) => pending.quantities[item.orderLine.sku ?? ""])
+              .map((item) => ({ shipmentItemId: item.id, quantity: pending.quantities[item.orderLine.sku ?? ""] ?? 0 })),
+          },
+        },
+      });
     }
     if (fixture.pendingCancellationReason) {
       await tx.cancellationRequest.create({

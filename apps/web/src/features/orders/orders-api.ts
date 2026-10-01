@@ -2,13 +2,17 @@ import {
   orderListResponseSchema,
   orderSchema,
   type ApproveCancellation,
+  type ApproveReturn,
   type CancelOrder,
   type ConfirmOrder,
   type CreateOrder,
   type OrderStatus,
+  type ReceiveReturn,
   type RejectCancellation,
   type RejectOrder,
+  type RejectReturn,
   type RequestCancellation,
+  type RequestReturn,
   type ShipOrder,
   type SaveOrderLines,
   type SubmitOrder,
@@ -56,6 +60,16 @@ export const rejectCancellation = (orderId: string, requestId: string, body: Rej
     headers: withKey(idempotencyKey),
     parse: parseOrder,
   });
+
+export const requestReturn = (orderId: string, body: RequestReturn, idempotencyKey: string) =>
+  request(`/orders/${orderId}/returns`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+const returnAction =
+  <T,>(action: "approve" | "reject" | "receive") =>
+  (orderId: string, returnId: string, body: T, idempotencyKey: string) =>
+    request(`/orders/${orderId}/returns/${returnId}/${action}`, { method: "POST", body, headers: withKey(idempotencyKey), parse: parseOrder });
+export const approveReturn = returnAction<ApproveReturn>("approve");
+export const rejectReturn = returnAction<RejectReturn>("reject");
+export const receiveReturn = returnAction<ReceiveReturn>("receive");
 
 function useOrdersQuery<T>(key: readonly unknown[], queryFn: () => Promise<T>, enabled = true) {
   const session = useSession();

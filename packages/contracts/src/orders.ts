@@ -16,6 +16,7 @@ export const orderStatusSchema = z.enum([
   "closed_partial",
 ]);
 export const cancellationRequestStatusSchema = z.enum(["pending", "approved", "rejected"]);
+export const returnRequestStatusSchema = z.enum(["pending", "approved", "rejected", "completed"]);
 export const priceStatusSchema = z.enum(["provisional", "frozen"]);
 
 const versionSchema = z.number().int().min(1);
@@ -63,19 +64,24 @@ export const rejectOrderSchema = z.strictObject({
   reason: z.string().trim().min(3).max(500),
 });
 
+/** Rejects a second entry for the same key, so each line, shipment item, or return item appears once. */
+function uniqueBy<T extends Record<K, string>, K extends string>(key: K) {
+  return (items: readonly T[], ctx: z.RefinementCtx) => {
+    const seen = new Set<string>();
+    items.forEach((item, index) => {
+      if (seen.has(item[key])) {
+        ctx.addIssue({ code: "custom", path: [index, key], message: "Each item can appear only once." });
+      }
+      seen.add(item[key]);
+    });
+  };
+}
+
 const fulfillmentItemsInputSchema = z
   .array(z.strictObject({ orderLineId: z.uuid(), quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY) }))
   .min(1)
   .max(MAX_ORDER_LINES)
-  .superRefine((items, ctx) => {
-    const seen = new Set<string>();
-    items.forEach((item, index) => {
-      if (seen.has(item.orderLineId)) {
-        ctx.addIssue({ code: "custom", path: [index, "orderLineId"], message: "Each line can appear only once." });
-      }
-      seen.add(item.orderLineId);
-    });
-  });
+  .superRefine(uniqueBy("orderLineId"));
 
 export const shipOrderSchema = z.strictObject({ version: versionSchema, items: fulfillmentItemsInputSchema });
 
@@ -93,8 +99,41 @@ export const rejectCancellationSchema = z.strictObject({
   reason: z.string().trim().min(3).max(500),
 });
 
+const returnReasonSchema = z.string().trim().min(3).max(500);
+
+export const requestReturnSchema = z.strictObject({
+  reason: returnReasonSchema,
+  items: z
+    .array(z.strictObject({ shipmentItemId: z.uuid(), quantity: z.number().int().min(1).max(MAX_LINE_QUANTITY) }))
+    .min(1)
+    .max(MAX_ORDER_LINES)
+    .superRefine(uniqueBy("shipmentItemId")),
+});
+
+export const approveReturnSchema = z.strictObject({});
+
+export const rejectReturnSchema = z.strictObject({ reason: returnReasonSchema });
+
+export const receiveReturnSchema = z.strictObject({
+  /** Every item of the return, exactly once; sellable plus damaged may be below the approved quantity. */
+  items: z
+    .array(
+      z.strictObject({
+        returnItemId: z.uuid(),
+        sellableQuantity: z.number().int().min(0).max(MAX_LINE_QUANTITY),
+        damagedQuantity: z.number().int().min(0).max(MAX_LINE_QUANTITY),
+      }),
+    )
+    .min(1)
+    .max(MAX_ORDER_LINES)
+    .superRefine(uniqueBy("returnItemId")),
+  /** Required when fewer units arrive than were approved. */
+  discrepancyReason: returnReasonSchema.optional(),
+});
+
 export const orderParamsSchema = z.object({ orderId: z.uuid() });
 export const cancellationRequestParamsSchema = z.object({ orderId: z.uuid(), requestId: z.uuid() });
+export const returnParamsSchema = z.object({ orderId: z.uuid(), returnId: z.uuid() });
 
 export const orderQuerySchema = z.strictObject({
   page: pageSchema,
@@ -102,6 +141,8 @@ export const orderQuerySchema = z.strictObject({
   status: orderStatusSchema.optional(),
   /** `submitted_asc` lists the processing queue oldest submission first. */
   sort: z.enum(["created_desc", "submitted_asc"]).default("created_desc"),
+  /** `open` keeps orders with a pending or approved return. */
+  returns: z.enum(["open"]).optional(),
 });
 
 const actorSchema = z.object({ id: z.uuid(), displayName: z.string() });
@@ -135,7 +176,14 @@ export const shipmentSchema = z.object({
   number: z.string(),
   createdAt: z.iso.datetime(),
   createdBy: z.object({ id: z.uuid(), displayName: z.string() }),
-  items: z.array(fulfillmentItemSchema),
+  items: z.array(
+    fulfillmentItemSchema.extend({
+      /** The shipment item a return references. */
+      id: z.uuid(),
+      /** shipped − pending/approved return quantities − units received by completed returns */
+      returnableQuantity: z.number().int().nonnegative(),
+    }),
+  ),
 });
 
 export const cancellationRequestSchema = z.object({
@@ -148,6 +196,34 @@ export const cancellationRequestSchema = z.object({
   decidedAt: z.iso.datetime().nullable(),
   decisionReason: z.string().nullable(),
   items: z.array(fulfillmentItemSchema),
+});
+
+export const returnRequestSchema = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  status: returnRequestStatusSchema,
+  reason: z.string(),
+  requestedBy: z.object({ id: z.uuid(), displayName: z.string() }),
+  requestedAt: z.iso.datetime(),
+  decidedBy: z.object({ id: z.uuid(), displayName: z.string() }).nullable(),
+  decidedAt: z.iso.datetime().nullable(),
+  decisionReason: z.string().nullable(),
+  receivedBy: z.object({ id: z.uuid(), displayName: z.string() }).nullable(),
+  receivedAt: z.iso.datetime().nullable(),
+  discrepancyReason: z.string().nullable(),
+  items: z.array(
+    z.object({
+      id: z.uuid(),
+      shipmentItemId: z.uuid(),
+      shipmentNumber: z.string(),
+      orderLineId: z.uuid(),
+      sku: z.string(),
+      quantity: z.number().int().positive(),
+      /** Both null until the receipt. */
+      receivedSellable: z.number().int().nonnegative().nullable(),
+      receivedDamaged: z.number().int().nonnegative().nullable(),
+    }),
+  ),
 });
 
 const orderFields = {
@@ -164,7 +240,12 @@ const orderFields = {
   submittedAt: z.iso.datetime().nullable(),
 };
 
-export const orderSummarySchema = z.object({ ...orderFields, lineCount: z.number().int().nonnegative() });
+export const orderSummarySchema = z.object({
+  ...orderFields,
+  lineCount: z.number().int().nonnegative(),
+  /** Returns still waiting for a decision or a receipt. */
+  openReturnCount: z.number().int().nonnegative(),
+});
 
 export const orderSchema = z.object({
   ...orderFields,
@@ -181,6 +262,7 @@ export const orderSchema = z.object({
   rejectionReason: z.string().nullable(),
   shipments: z.array(shipmentSchema),
   cancellationRequests: z.array(cancellationRequestSchema),
+  returns: z.array(returnRequestSchema),
 });
 
 export const orderListResponseSchema = paginatedResponseSchema(orderSummarySchema);
@@ -196,6 +278,11 @@ export type ShipOrder = z.infer<typeof shipOrderSchema>;
 export type RequestCancellation = z.infer<typeof requestCancellationSchema>;
 export type ApproveCancellation = z.infer<typeof approveCancellationSchema>;
 export type RejectCancellation = z.infer<typeof rejectCancellationSchema>;
+export type RequestReturn = z.infer<typeof requestReturnSchema>;
+export type ApproveReturn = z.infer<typeof approveReturnSchema>;
+export type RejectReturn = z.infer<typeof rejectReturnSchema>;
+export type ReceiveReturn = z.infer<typeof receiveReturnSchema>;
+export type ReturnRequest = z.infer<typeof returnRequestSchema>;
 export type Shipment = z.infer<typeof shipmentSchema>;
 export type CancellationRequest = z.infer<typeof cancellationRequestSchema>;
 export type OrderQuery = z.infer<typeof orderQuerySchema>;

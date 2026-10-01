@@ -24,6 +24,10 @@ export function mutationMessage(error: unknown, lostResponse: string): string {
       return "A cancellation request for this order is already waiting for a decision.";
     case ERROR_CODES.cancellationQuantityExceeded:
       return `Too many units: ${error.details.map((detail) => `${detail.field.replace(/^lines\./, "")} (${detail.message.replace(/\.$/, "")})`).join("; ")}. Nothing was requested.`;
+    case ERROR_CODES.returnQuantityExceeded:
+      return `Too many units: ${error.details.map((detail) => `${detail.field.replace(/^shipments\./, "").replace(".", " · ")} (${detail.message.replace(/\.$/, "")})`).join("; ")}. Nothing was recorded.`;
+    case ERROR_CODES.invalidReturnTransition:
+      return `${error.message} Reload the order to see its current state.`;
     case ERROR_CODES.cancellationConflict:
       return `Items shipped after this request was made (${error.details.map((detail) => detail.field.replace(/^lines\./, "")).join(", ")}). Reject it so the retailer can request again. Nothing was released.`;
     case ERROR_CODES.validationFailed:

@@ -94,6 +94,14 @@ export class ApiException extends HttpException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationQuantityExceeded, "A cancellation request cannot exceed the outstanding quantity.", details);
   }
 
+  static returnQuantityExceeded(details: readonly ErrorDetail[]): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.returnQuantityExceeded, "Returned quantities cannot exceed what was shipped or approved.", details);
+  }
+
+  static invalidReturnTransition(message: string): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.invalidReturnTransition, message);
+  }
+
   static cancellationConflict(details: readonly ErrorDetail[]): ApiException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationConflict, "The order changed since the cancellation was requested.", details);
   }

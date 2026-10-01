@@ -154,3 +154,34 @@
   display: grid;
   gap: var(--space-2);
 }
+
+.receiptLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6);
+  align-items: flex-start;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.receiptLine legend {
+  padding: 0 var(--space-2);
+  font-weight: 600;
+}
+
+.receiptLine > p {
+  flex-basis: 100%;
+}
+
+.openReturns {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  color: var(--color-primary);
+  white-space: nowrap;
+}

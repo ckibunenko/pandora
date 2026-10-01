@@ -21,12 +21,14 @@ export async function restoreDemoData(prisma: PrismaClient, databaseName: string
     // No CASCADE: a future table referencing this data must be reviewed and added explicitly.
     // TRUNCATE and ALTER SEQUENCE RESTART roll back with seed/verification failures.
     await tx.$executeRaw`TRUNCATE TABLE
+      return_request_items, return_requests,
       cancellation_request_items, cancellation_requests, shipment_items, shipments,
       stock_reservations, order_lines, orders, idempotency_records,
       inventory_movements, inventory_items, audit_events, product_variants, products,
       sessions, login_attempts, users, organizations RESTART IDENTITY`;
     await tx.$executeRaw`ALTER SEQUENCE orders_number_seq RESTART WITH 1001`;
     await tx.$executeRaw`ALTER SEQUENCE shipments_number_seq RESTART WITH 1001`;
+    await tx.$executeRaw`ALTER SEQUENCE returns_number_seq RESTART WITH 1001`;
     const seeded = await seedData(tx, passwordHash);
     const counts = await Promise.all([
       tx.organization.count(), tx.user.count(), tx.product.count(), tx.productVariant.count(),
