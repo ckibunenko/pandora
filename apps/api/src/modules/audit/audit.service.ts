@@ -16,7 +16,7 @@ export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   private scope(auth: AuthContext): Prisma.AuditEventWhereInput {
-    return auth.user.role === "administrator" ? {} : { entityType: { in: ["order", "inventory_item"] } };
+    return auth.user.role === "administrator" ? {} : { entityType: { in: ["order", "inventory_item", "notification"] } };
   }
 
   // Resolve display names in batches; audit IDs and snapshots never depend on current names.

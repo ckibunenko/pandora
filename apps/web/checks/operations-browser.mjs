@@ -190,7 +190,7 @@ try {
     await login("operator@pandora.test");
     await click("[data-test=audit-nav]");
     await waitFor(`!!${q("[data-test=audit-row]")}`, "operator audit");
-    assert.deepEqual(await evaluate(`[...${q("[data-test=audit-entity-type]")}.options].map((option) => option.value)`), ["", "inventory_item", "order"]);
+    assert.deepEqual(await evaluate(`[...${q("[data-test=audit-entity-type]")}.options].map((option) => option.value)`), ["", "inventory_item", "order", "notification"]);
     assert.ok((await rowIds("[data-test=audit-row]", "data-entity-type")).every((type) => ["order", "inventory_item"].includes(type)));
     await navigate(`/audit/${restricted.id}`);
     await waitFor(`!!${q("[data-test=audit-detail-error]")}`, "restricted detail");

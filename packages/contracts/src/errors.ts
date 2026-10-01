@@ -26,6 +26,7 @@ export const ERROR_CODES = {
   cancellationQuantityExceeded: "CANCELLATION_QUANTITY_EXCEEDED",
   returnQuantityExceeded: "RETURN_QUANTITY_EXCEEDED",
   invalidReturnTransition: "INVALID_RETURN_TRANSITION",
+  notificationNotRetryable: "NOTIFICATION_NOT_RETRYABLE",
   organizationNameExists: "ORGANIZATION_NAME_EXISTS",
   emailAlreadyExists: "EMAIL_ALREADY_EXISTS",
   distributorOrganizationProtected: "DISTRIBUTOR_ORGANIZATION_PROTECTED",

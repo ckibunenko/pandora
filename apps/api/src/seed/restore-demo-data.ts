@@ -21,6 +21,7 @@ export async function restoreDemoData(prisma: PrismaClient, databaseName: string
     // No CASCADE: a future table referencing this data must be reviewed and added explicitly.
     // TRUNCATE and ALTER SEQUENCE RESTART roll back with seed/verification failures.
     await tx.$executeRaw`TRUNCATE TABLE
+      notification_attempts, notification_jobs,
       return_request_items, return_requests,
       cancellation_request_items, cancellation_requests, shipment_items, shipments,
       stock_reservations, order_lines, orders, idempotency_records,

@@ -15,7 +15,8 @@ import { IdempotencyService } from "../../common/idempotency/idempotency.service
 import { currentCorrelationId } from "../../common/request-context/request-context.js";
 import type { Prisma } from "../../generated/prisma/client.js";
 import type { AuthContext } from "../auth/auth-context.js";
-import { OrdersService, returnableQuantity, type OrderRecord } from "./orders.service.js";
+import { NotificationOutbox } from "../notifications/notification-outbox.js";
+import { OrdersService, orderRef, returnableQuantity, type OrderRecord } from "./orders.service.js";
 
 /** Orders with at least one shipment; returns never change their fulfillment status (overview §5–§6). */
 const RETURNABLE: readonly OrderRecord["status"][] = ["PARTIALLY_SHIPPED", "SHIPPED", "CLOSED_PARTIAL"];
@@ -35,6 +36,7 @@ export class ReturnsService {
     private readonly orders: OrdersService,
     private readonly clock: Clock,
     private readonly idempotency: IdempotencyService,
+    private readonly outbox: NotificationOutbox,
   ) {}
 
   private async reload(tx: Prisma.TransactionClient, orderId: string, auth: AuthContext): Promise<Order> {
@@ -116,6 +118,14 @@ export class ReturnsService {
             requested: Object.fromEntries(requested.map(({ quantity, label }) => [label, quantity])),
           },
         });
+        await this.outbox.enqueue(tx, {
+          type: "return.requested",
+          order: orderRef(order),
+          returnId: created.id,
+          returnNumber: created.number,
+          items: Object.fromEntries(requested.map(({ quantity, label }) => [label.replace(".", " · "), quantity])),
+          reason: input.reason,
+        });
         return this.reload(tx, orderId, auth);
       },
       200,
@@ -141,6 +151,7 @@ export class ReturnsService {
           before: { returnId, status: "pending" },
           after: { returnId, return: request.number, status: "approved" },
         });
+        await this.outbox.enqueue(tx, { type: "return.decided", order: orderRef(order), returnId, returnNumber: request.number, approved: true, reason: null });
         return this.reload(tx, orderId, auth);
       },
       200,
@@ -170,6 +181,14 @@ export class ReturnsService {
           action: "return_rejected",
           before: { returnId, status: "pending" },
           after: { returnId, return: request.number, status: "rejected", reason: input.reason },
+        });
+        await this.outbox.enqueue(tx, {
+          type: "return.decided",
+          order: orderRef(order),
+          returnId,
+          returnNumber: request.number,
+          approved: false,
+          reason: input.reason,
         });
         return this.reload(tx, orderId, auth);
       },
@@ -282,6 +301,15 @@ export class ReturnsService {
             damaged: damagedBySku,
             discrepancyReason: input.discrepancyReason ?? null,
           },
+        });
+        await this.outbox.enqueue(tx, {
+          type: "return.received",
+          order: orderRef(order),
+          returnId,
+          returnNumber: request.number,
+          sellable: sellableBySku,
+          damaged: damagedBySku,
+          discrepancyReason: input.discrepancyReason ?? null,
         });
         return this.reload(tx, orderId, auth);
       },

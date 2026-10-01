@@ -1,4 +1,4 @@
-import { auditEntityTypeSchema, auditQuerySchema } from "@pandora/contracts";
+import { auditEntityTypeSchema, auditQuerySchema, type AuditQuery } from "@pandora/contracts";
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { ListPagination } from "../../components/ListPagination";
@@ -6,6 +6,9 @@ import { useSession } from "../auth/session";
 import catalogStyles from "../catalog/Catalog.module.css";
 import { auditDate, useAuditEvents } from "./audit-api";
 import auditStyles from "./Audit.module.css";
+
+/** Operators read the operational scope only (overview §3); the API enforces the same list. */
+const OPERATIONAL_TYPES: readonly NonNullable<AuditQuery["entityType"]>[] = ["inventory_item", "order", "notification"];
 
 const FILTERS = [
   { key: "entityId", label: "Entity ID", placeholder: "Exact UUID", max: 36 },
@@ -64,7 +67,7 @@ export function AuditPage() {
           Entity type
           <select name="entityType" defaultValue={params.get("entityType") ?? ""} data-test="audit-entity-type">
             <option value="">All {isAdmin ? "types" : "operational types"}</option>
-            {auditEntityTypeSchema.options.filter((type) => isAdmin || type === "order" || type === "inventory_item").map((type) => (
+            {auditEntityTypeSchema.options.filter((type) => isAdmin || OPERATIONAL_TYPES.includes(type)).map((type) => (
               <option key={type} value={type}>{type.replaceAll("_", " ")}</option>
             ))}
           </select>

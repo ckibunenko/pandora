@@ -39,6 +39,21 @@ services:
       timeout: 3s
       retries: 30
 
+  # Delivers outbox jobs to the demo's own captured inbox; stopped and restarted by demo:reset with the API.
+  worker:
+    <<: *api
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://pandora_demo:${DEMO_DB_PASSWORD:?set in .env.demo}@postgres:5432/pandora_demo?schema=public
+      NOTIFICATION_SMTP_URL: smtp://mailpit:1025
+    command: ["node", "dist/worker.js"]
+    stop_grace_period: 30s
+
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    ports:
+      - "127.0.0.1:${DEMO_MAIL_PORT:-5181}:8025"
+
   reset:
     <<: *api
     profiles: [tools]

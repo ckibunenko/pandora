@@ -1,5 +1,5 @@
 import { Global, Inject, Injectable, Module, type OnModuleInit } from "@nestjs/common";
-import { APP_CONFIG, InvalidConfigError, type AppConfig } from "../config/app-config.js";
+import { APP_CONFIG, InvalidConfigError, type BaseConfig } from "../config/app-config.js";
 import { PrismaService } from "../../infrastructure/prisma/prisma.service.js";
 import type { DefectId } from "./defects.js";
 
@@ -10,7 +10,7 @@ import type { DefectId } from "./defects.js";
 @Injectable()
 export class BugLab implements OnModuleInit {
   constructor(
-    @Inject(APP_CONFIG) private readonly config: AppConfig,
+    @Inject(APP_CONFIG) private readonly config: BaseConfig,
     private readonly prisma: PrismaService,
   ) {}
 

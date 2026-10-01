@@ -30,7 +30,7 @@
   - The demo (`NODE_ENV=production`, database `pandora_demo`) fails the first two rules.
   - Development (`pandora`, unmarked) fails the database rule.
 - **The Standard comparison uses the same scenario data** (`--defect none`). The assertion is identical for both modes and returns what it observed, so the failure reason is asserted exactly.
-- **No worker or inbox exists yet.** When they arrive, they must read the same selection and refuse the same configurations.
+- **Worker:** `check:bug-lab` also verifies that the notification worker refuses unknown IDs, production, non-Bug-Lab databases, and marker mismatches, and starts on a matching database.
 
 ## API / PostgreSQL checks
 

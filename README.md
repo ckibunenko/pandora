@@ -23,7 +23,10 @@ Built so far:
 - **Audit trail**: staff search committed changes by entity, action, actor, acting organization, correlation ID and UTC time range, and inspect read-only before/after values. Administrators see all business audit; operators see orders and inventory only.
 - Operational lists have 20/50/100 page controls; Orders and Movement history now preserve their pagination in the URL.
 
-Returns and notifications have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
+- **Returns**: retailers send shipped units back; staff approve or reject the request and inspect the receipt into sellable or damaged stock.
+- **Notifications**: business events queue emails in a transactional outbox; a separate worker (`pnpm --filter @pandora/api worker`) delivers them to a captured Mailpit inbox (`docker compose up -d mailpit`, http://localhost:8025) with leases, bounded retries, and staff diagnostics.
+
+The product scope and business rules are in [context/project-overview.md](context/project-overview.md).
 
 An isolated local demo can be built and restored with `pnpm demo:build` and `pnpm demo:reset` after creating `.env.demo` from `.env.demo.example`. Reset discards demo changes, signs everyone out, and restores the fixtures behind a maintenance page. Its database is separate from development. Setup, recovery, and verification: [demo reset runbook](context/features/demo-reset-verification.md).
 

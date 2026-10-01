@@ -14,11 +14,11 @@ Read the following to get the full context of the project:
 
 ## Setup
 
-Requires Node 24 (`.nvmrc`), pnpm via corepack (`corepack enable`; version pinned in `package.json`), and Docker for PostgreSQL.
+Requires Node 24 (`.nvmrc`), pnpm via corepack (`corepack enable`; version pinned in `package.json`), and Docker for PostgreSQL and the Mailpit inbox.
 
 1. `cp .env.example .env` (repository root; `.env` is never committed)
 2. `pnpm install`
-3. `docker compose up -d postgres`
+3. `docker compose up -d postgres mailpit` (Mailpit is the captured email inbox: SMTP 1025, UI http://localhost:8025)
 4. `pnpm --filter @pandora/api db:migrate`
 5. `pnpm --filter @pandora/api db:seed`
 
@@ -27,6 +27,7 @@ Requires Node 24 (`.nvmrc`), pnpm via corepack (`corepack enable`; version pinne
 Run from the repository root:
 
 - `pnpm dev` — web (http://localhost:5173) and API (`API_PORT`, default 3000) in watch mode; Vite proxies `/api` to the API
+- `pnpm --filter @pandora/api worker` — the notification worker (`dist/worker.js`, built by `pnpm dev`/`pnpm build`); delivers queued emails to `NOTIFICATION_SMTP_URL` (Mailpit in development)
 - `pnpm build` — build every workspace package
 - `pnpm typecheck` — strict TypeScript check of every package
 - `pnpm lint` — ESLint (flat config, `eslint.config.mjs`)
@@ -46,6 +47,7 @@ Focused feature checks exist, each against its own empty QA database (never the 
 - Order processing: `apps/api/checks/order-processing.mjs` (`pnpm --filter @pandora/api check:processing`, built on the shared `apps/api/checks/harness.mjs`) and `apps/web/checks/order-processing-browser.mjs`. See `context/features/order-processing-verification.md`. Browser suites that change the same seed orders need separate fresh databases.
 - Fulfillment: `apps/api/checks/fulfillment.mjs` (`pnpm --filter @pandora/api check:fulfillment`) and `apps/web/checks/fulfillment-browser.mjs`. See `context/features/fulfillment-verification.md`.
 - Returns: `apps/api/checks/returns.mjs` (`pnpm --filter @pandora/api check:returns`) and `apps/web/checks/returns-browser.mjs`. See `context/features/returns-verification.md`.
+- Notifications: `apps/api/checks/notifications.mjs` (`pnpm --filter @pandora/api check:notifications`, with an in-process SMTP stub `checks/smtp-stub.mjs` and real worker processes) and `apps/web/checks/notifications-browser.mjs` (its `check:all` group also starts a worker with `NOTIFICATION_FAILURE_MODE=permanent`). See `context/features/notifications-verification.md`.
 - Organization and user administration: `apps/api/checks/administration.mjs` (`pnpm --filter @pandora/api check:admin`) and `apps/web/checks/admin-browser.mjs`. See `context/features/admin-management-verification.md`.
 - Bug Lab: `apps/api/checks/bug-lab.mjs` (`pnpm --filter @pandora/api check:bug-lab`); see `context/features/bug-lab-verification.md`.
 - Audit search and operational pagination: `apps/api/checks/operations.mjs` (`pnpm --filter @pandora/api check:operations`) and `apps/web/checks/operations-browser.mjs`. See `context/features/phase-2-operations-verification.md`.
@@ -70,11 +72,11 @@ CI uses CI-only credentials and no repository secrets. There is no unit-test fra
 
 ## Isolated demo
 
-- `compose.demo.yml` and `.env.demo.example` define a separate local demo; only the web port (5180 by default) is published on loopback. Development still uses `docker-compose.yml` and `.env`.
-- `pnpm demo:build` builds API/web images; `pnpm demo:reset` is destructive **only to the dedicated demo**. It persists maintenance, stops the API, deploys migrations, atomically restores fixtures/session/idempotency state, waits for readiness, then reopens. Failure stays in maintenance.
+- `compose.demo.yml` and `.env.demo.example` define a separate local demo; only the web port (5180 by default) and the demo Mailpit UI (5181) are published on loopback. Development still uses `docker-compose.yml` and `.env`.
+- `pnpm demo:build` builds API/web images; `pnpm demo:reset` is destructive **only to the dedicated demo**. It persists maintenance, stops the API and the notification worker, deploys migrations, atomically restores fixtures/session/idempotency state, waits for readiness, then reopens. Failure stays in maintenance.
 - Shared fixtures live in `apps/api/src/seed/seed-data.ts`; normal `db:seed` remains development/test-only. `restore-demo-data.ts` is an operator-only transaction, not an API operation.
 - Verification: `DEMO_CHECK_DATABASE=pandora_demo_check_<unique> pnpm --filter @pandora/api check:demo-reset` on an empty QA database; `apps/web/checks/demo-reset-browser.mjs` on a disposable `pandora-demo-qa-*` Compose project. See [runbook and evidence](context/features/demo-reset-verification.md).
-- No scheduler/public deployment is installed. Future workers must join the reset stop/start lifecycle; new tables need explicit reset review.
+- No scheduler/public deployment is installed. Any further worker must join the reset stop/start lifecycle; new tables need explicit reset review.
 
 ## Bug Lab
 
@@ -83,7 +85,7 @@ Isolated defect environment (overview §9); learner-facing docs are in [bug-lab/
 - **Setup and start:**
   - `pnpm bug-lab setup --defect BUG-001|BUG-002|BUG-003|none` creates `pandora_buglab_<defect>_<run>`, migrates, seeds, and adds scenario fixtures (40 extra Tabletop Lantern drafts, `PO-000101`–`PO-000140`).
   - It then sets the database marker `pandora.defect` and writes a run manifest to `bug-lab/runs/` (gitignored).
-  - `pnpm bug-lab start --run <id>` serves it on 5176 (API 3020).
+  - `pnpm bug-lab start --run <id>` serves it on 5176 (API 3020) and starts a notification worker that delivers to the separate Bug Lab inbox (`docker compose --profile bug-lab up -d mailpit-buglab`, UI 8026).
 - **Selection:** the API reads `BUG_LAB_DEFECT` and accepts exactly one known ID. It refuses to start when:
   - `NODE_ENV=production`;
   - the database is not named `pandora_buglab…`;
@@ -127,6 +129,7 @@ pnpm workspace monorepo following the target in `context/coding-standards.md`:
   - Auth (`src/modules/auth/`): global guards run in order session → CSRF → roles. Every route requires a session unless marked `@Public()`; restrict by role with `@Roles(...)`; read the caller with `@CurrentAuth()`. Unsafe methods need the `X-CSRF-Token` header from the session response.
     - Sign-in is limited to 5 attempts per normalized email per 15 minutes (`LoginRateLimiter`), with 429 `TOO_MANY_LOGIN_ATTEMPTS` and `Retry-After`. Unknown emails are handled identically. Attempts are stored only as SHA-256 digests in `login_attempts`, and a per-email advisory lock covers only the count-and-record step.
     - `SessionCleanupService` removes sessions that have been unusable for more than 24 hours, and attempts older than the window. It runs at startup and every `SESSION_CLEANUP_INTERVAL_SECONDS` (optional, default 3600).
+  - Notifications (`src/modules/notifications/`, worker in `src/worker/` with entry `src/worker.ts`): `NotificationOutbox.enqueue(tx, event)` writes one job per active recipient inside the business transaction, after `recordAudit` (dedup `(event_key, recipient_user_id)`; events and recipients in `context/features/notifications.md`). The worker is a separate process: it claims due jobs with `FOR UPDATE SKIP LOCKED` under a lease, records an attempt, sends outside any transaction (`MailTransport`: nodemailer SMTP, or `NOTIFICATION_FAILURE_MODE=transient|permanent`, refused in production), and records the outcome only while it owns the lease; expired leases become `ambiguous` attempts. At most 5 attempts with `NOTIFICATION_RETRY_DELAYS_MS`; SMTP 5xx fails at once. It never writes business tables, and it shares `BaseConfig`, the Bug Lab guard, and the clock with the API. Staff diagnostics: `GET /api/notifications`, `/:id`, and `POST /:id/retry` (Idempotency-Key; failed → one more attempt; audited as entity `notification`). Operators see no recipient addresses or bodies.
 - `packages/contracts` — Zod schemas and types shared by web and API. Build it before typechecking dependents (root scripts do this).
 - `prisma/` — schema and migrations. The Prisma 7 client is generated into `apps/api/src/generated/prisma` (gitignored) by `prisma generate`, which the API's `dev`/`build`/`typecheck` scripts run automatically.
 - `docker-compose.yml` — local PostgreSQL only.

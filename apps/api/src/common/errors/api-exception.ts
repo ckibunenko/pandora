@@ -102,6 +102,10 @@ export class ApiException extends HttpException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.invalidReturnTransition, message);
   }
 
+  static notificationNotRetryable(message: string): ApiException {
+    return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.notificationNotRetryable, message);
+  }
+
   static cancellationConflict(details: readonly ErrorDetail[]): ApiException {
     return new ApiException(HttpStatus.CONFLICT, ERROR_CODES.cancellationConflict, "The order changed since the cancellation was requested.", details);
   }

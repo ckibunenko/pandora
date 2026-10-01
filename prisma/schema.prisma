@@ -57,6 +57,7 @@ model User {
   requestedReturns       ReturnRequest[]       @relation("ReturnRequestedBy")
   decidedReturns         ReturnRequest[]       @relation("ReturnDecidedBy")
   receivedReturns        ReturnRequest[]       @relation("ReturnReceivedBy")
+  notifications          NotificationJob[]
 
   @@index([organizationId])
   @@map("users")
@@ -280,6 +281,7 @@ model Order {
   shipments            Shipment[]
   cancellationRequests CancellationRequest[]
   returnRequests       ReturnRequest[]
+  notificationJobs     NotificationJob[]
 
   @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
@@ -442,4 +444,66 @@ model ReturnRequestItem {
   @@unique([requestId, shipmentItemId])
   @@index([shipmentItemId])
   @@map("return_request_items")
+}
+
+enum NotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+}
+
+enum NotificationAttemptOutcome {
+  IN_PROGRESS
+  SENT
+  FAILED
+  AMBIGUOUS
+}
+
+/// Outbox row written in the business transaction; the worker delivers it afterwards, at most once per lease.
+model NotificationJob {
+  id              String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  eventType       String                @map("event_type") @db.VarChar(64)
+  /// Business event identity; unique together with the recipient so an event never notifies someone twice.
+  eventKey        String                @map("event_key") @db.VarChar(160)
+  orderId         String                @map("order_id") @db.Uuid
+  order           Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  recipientUserId String                @map("recipient_user_id") @db.Uuid
+  recipient       User                  @relation(fields: [recipientUserId], references: [id], onDelete: Restrict)
+  recipientEmail  String                @map("recipient_email") @db.VarChar(320)
+  subject         String                @db.VarChar(200)
+  body            String                @db.VarChar(4000)
+  status          NotificationStatus
+  attemptCount    Int                   @default(0) @map("attempt_count")
+  maxAttempts     Int                   @map("max_attempts")
+  nextAttemptAt   DateTime              @map("next_attempt_at") @db.Timestamptz(3)
+  leaseOwner      String?               @map("lease_owner") @db.VarChar(64)
+  leaseExpiresAt  DateTime?             @map("lease_expires_at") @db.Timestamptz(3)
+  lastError       String?               @map("last_error") @db.VarChar(500)
+  correlationId   String                @map("correlation_id") @db.VarChar(64)
+  createdAt       DateTime              @map("created_at") @db.Timestamptz(3)
+  sentAt          DateTime?             @map("sent_at") @db.Timestamptz(3)
+  attempts        NotificationAttempt[]
+
+  @@unique([eventKey, recipientUserId])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([orderId])
+  @@map("notification_jobs")
+}
+
+/// One delivery attempt; `ambiguous` means a lease expired before the outcome was recorded.
+model NotificationAttempt {
+  id         String                     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  jobId      String                     @map("job_id") @db.Uuid
+  job        NotificationJob            @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  number     Int
+  workerId   String                     @map("worker_id") @db.VarChar(64)
+  startedAt  DateTime                   @map("started_at") @db.Timestamptz(3)
+  finishedAt DateTime?                  @map("finished_at") @db.Timestamptz(3)
+  outcome    NotificationAttemptOutcome
+  error      String?                    @db.VarChar(500)
+
+  @@unique([jobId, number])
+  @@map("notification_attempts")
 }

@@ -61,7 +61,7 @@ Do not manually clear the maintenance marker or start the API to bypass a failed
 
 The planned public-demo reset time remains **03:00 Europe/Belgrade daily**. A future deployment scheduler should invoke `pnpm demo:reset` from the repository root, with the correct Node/pnpm PATH, Docker access, and that named timezone. Select a scheduler with explicit timezone/DST support and retain the command's exit status/logs for failure alerting. No host cron job, public hosting, HTTPS, or scheduler was installed by this feature.
 
-The current stack is loopback HTTP and uses non-Secure session cookies for that reason. A public deployment must add HTTPS and enable secure cookies. No notification worker exists yet; when one is added, include it in the stop/verify/start lifecycle before using reset with that deployment. New persistence tables must be explicitly reviewed for truncation and restoration.
+The current stack is loopback HTTP and uses non-Secure session cookies for that reason. A public deployment must add HTTPS and enable secure cookies. The notification worker is part of the stop/verify/start lifecycle: `demo:reset` stops the API and the worker, truncates `notification_jobs` and `notification_attempts` with the fixtures, and starts both again; the demo inbox (Mailpit) is at `http://localhost:${DEMO_MAIL_PORT:-5181}`. New persistence tables must be explicitly reviewed for truncation and restoration.
 
 ## Reproduce verification
 
@@ -90,3 +90,11 @@ DEMO_COMPOSE_PROJECT=pandora-demo-qa-check DEMO_PORT=5186 node --env-file=.env.d
 - Development data was not reset. The user demo project was not reset; execution used a new disposable QA Compose project.
 
 The temporary `pandora-demo-qa-reset` containers were stopped after verification; their volumes and screenshot evidence were retained.
+
+## Results — 2026-10-01 (notification worker)
+
+- **Lifecycle/browser: 5/5 groups** on `pandora-demo-qa-notifications` (web 5186, Mailpit UI 5187):
+  - only web and the loopback Mailpit UI are published, and the worker runs;
+  - a failed restore leaves both the API and the worker stopped;
+  - after a successful retry, the notification tables are empty, the worker is running again, and a submitted order reaches the demo inbox for both staff recipients.
+- **Database: 6/6 groups**, now also asserting that queued notifications are cleared.

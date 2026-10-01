@@ -16,7 +16,7 @@ Restore the fictional demo to its deterministic seed without touching the develo
 - An operator CLI owns reset; no business role, browser page, or API endpoint can invoke it.
 - Lifecycle: acquire an exclusive operator lock → start database/proxy if needed → persist a maintenance marker → stop API and wait for exit → migrate → atomically truncate business/session/idempotency data and restore seed → start API and wait for readiness → clear maintenance.
 - The reverse proxy serves a maintenance page and returns 503 `MAINTENANCE` for API calls while the marker exists. Its volume survives container restarts.
-- Stopping the API drains or terminates all its work before restoration. No worker exists yet; any future worker must be included in the stop/start lifecycle before deployment.
+- Stopping the API drains or terminates all its work before restoration. The notification worker (added with notifications) is stopped and started together with the API.
 - The reset command is restricted to the dedicated `pandora_demo` database in the demo stack. Tests use explicitly named disposable QA databases. It refuses other database names and other connected database clients.
 - Truncation, seed, sequence restart, and verification share one transaction. It never calls `prisma migrate reset`, drops a database, disables constraints, or resets development data.
 - Old sessions and idempotency receipts disappear. Both business-number sequences return to 1001; fixed seed records keep their reserved low numbers.

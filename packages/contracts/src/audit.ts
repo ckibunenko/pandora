@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { pageSchema, pageSizeSchema, paginatedResponseSchema } from "./pagination.js";
 
-export const auditEntityTypeSchema = z.enum(["product", "variant", "inventory_item", "order", "organization", "user"]);
+export const auditEntityTypeSchema = z.enum(["product", "variant", "inventory_item", "order", "organization", "user", "notification"]);
 
 export const auditQuerySchema = z.strictObject({
   page: pageSchema,

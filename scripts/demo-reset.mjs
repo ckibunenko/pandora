@@ -33,22 +33,22 @@ try {
   await control("mkdir", "/maintenance/reset-lock");
   locked = true;
   await control("touch", "/maintenance/enabled");
-  console.log("Maintenance enabled. Stopping demo writers.");
-  await compose(["stop", "--timeout", "30", "api"]);
-  if (await compose(["ps", "--status", "running", "-q", "api"], true)) {
-    throw new Error("The demo API is still running; refusing to restore data.");
+  console.log("Maintenance enabled. Stopping demo writers (API and notification worker).");
+  await compose(["stop", "--timeout", "30", "api", "worker"]);
+  if (await compose(["ps", "--status", "running", "-q", "api", "worker"], true)) {
+    throw new Error("The demo API or worker is still running; refusing to restore data.");
   }
-  await compose(["up", "-d", "--wait", "--wait-timeout", "60", "postgres", "web"]);
+  await compose(["up", "-d", "--wait", "--wait-timeout", "60", "postgres", "web", "mailpit"]);
   await compose(["run", "--rm", "--no-deps", "reset", "node", "node_modules/prisma/build/index.js", "migrate", "deploy"]);
   await compose(["run", "--rm", "--no-deps", "reset"]);
-  await compose(["up", "-d", "--no-deps", "--wait", "--wait-timeout", "60", "api"]);
+  await compose(["up", "-d", "--no-deps", "--wait", "--wait-timeout", "60", "api", "worker"]);
   await control("rm", "/maintenance/enabled");
   console.log(`Demo restored: http://localhost:${process.env.DEMO_PORT ?? "5180"}. Sign in again.`);
 } catch (error) {
   if (locked) {
     // Covers errors after API startup too: an unhealthy or partly started stack must stay closed.
     await control("touch", "/maintenance/enabled").catch(() => {});
-    await compose(["stop", "--timeout", "30", "api"]).catch(() => {});
+    await compose(["stop", "--timeout", "30", "api", "worker"]).catch(() => {});
     console.error("Reset failed; maintenance remains enabled. Fix the cause and retry demo:reset.");
   } else {
     console.error("Could not acquire the demo reset lock. Check Docker/images or an existing reset; see the recovery runbook.");

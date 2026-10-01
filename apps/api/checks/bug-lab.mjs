@@ -41,11 +41,19 @@ function setup(defect) {
 }
 
 const running = [];
-function spawnApi({ database, defect, port, nodeEnv = "test" }) {
-  const env = { ...process.env, DATABASE_URL: urlFor(database), API_PORT: String(port), NODE_ENV: nodeEnv, CATALOG_CURRENCY: "EUR" };
+function spawnApi({ database, defect, port, nodeEnv = "test", script = "dist/main.js" }) {
+  const env = {
+    ...process.env,
+    DATABASE_URL: urlFor(database),
+    API_PORT: String(port),
+    NODE_ENV: nodeEnv,
+    CATALOG_CURRENCY: "EUR",
+    // Only the notification worker reads this; nothing listens there, and refused workers never connect.
+    NOTIFICATION_SMTP_URL: "smtp://127.0.0.1:1",
+  };
   delete env.BUG_LAB_DEFECT;
   if (defect) env.BUG_LAB_DEFECT = defect;
-  const child = spawn(process.execPath, ["dist/main.js"], { cwd: apiDir, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [script], { cwd: apiDir, env, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
   child.stdout.on("data", (d) => (logs += d));
   child.stderr.on("data", (d) => (logs += d));
@@ -212,6 +220,27 @@ try {
     await refusedStart({ database: lab1, defect: "BUG-002", port: 3025 }, /marked BUG-001, not BUG-002/);
     await refusedStart({ database: lab1, port: 3025 }, /marked for BUG-001; start the API with BUG_LAB_DEFECT=BUG-001/);
     await refusedStart({ database: standard.database, defect: "BUG-003", port: 3025 }, /marked for Standard mode, not BUG-003/);
+  });
+
+  await check("the notification worker refuses the same configurations and starts only on a matching database", async () => {
+    const lab1 = labs["BUG-001"].database;
+    const worker = { port: 3025, script: "dist/worker.js" };
+    await refusedStart({ ...worker, database: standard.database, defect: "BUG-999" }, /BUG_LAB_DEFECT: must be exactly one of/);
+    await refusedStart({ ...worker, database: lab1, defect: "BUG-001", nodeEnv: "production" }, /refused when NODE_ENV is production/);
+    await refusedStart({ ...worker, database: "pandora_demo", defect: "BUG-001" }, /needs a dedicated pandora_buglab/);
+    await refusedStart({ ...worker, database: lab1, defect: "BUG-002" }, /marked BUG-001, not BUG-002/);
+    await refusedStart({ ...worker, database: lab1 }, /marked for BUG-001/);
+    await refusedStart({ ...worker, database: standard.database, defect: "BUG-003" }, /marked for Standard mode, not BUG-003/);
+    const accepted = spawnApi({ ...worker, database: lab1, defect: "BUG-001" });
+    for (let i = 0; i < 100 && !/Notification worker started/.test(accepted.logs()); i += 1) {
+      if (accepted.child.exitCode !== null) throw new Error(`Worker exited: ${accepted.logs().slice(-2000)}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.match(accepted.logs(), /Notification worker started/);
+    accepted.child.kill("SIGTERM");
+    // Nest re-raises the signal after its shutdown hooks, so a clean stop ends by SIGTERM (or exit code 0).
+    const [code, signal] = await new Promise((resolve) => accepted.child.once("exit", (...result) => resolve(result)));
+    assert.ok(code === 0 || signal === "SIGTERM", `stops cleanly (${code}/${signal})`);
   });
 
   const standardApi = await startApi({ database: standard.database, port: 3021 });
