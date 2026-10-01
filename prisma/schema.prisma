@@ -143,6 +143,9 @@ model AuditEvent {
   after          Json
 
   @@index([entityType, entityId, occurredAt])
+  @@index([occurredAt, id])
+  @@index([actorId, occurredAt])
+  @@index([organizationId, occurredAt])
   @@map("audit_events")
 }
 

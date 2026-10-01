@@ -29,6 +29,7 @@ const evidence = options.evidence ?? join(tmpdir(), `pandora-check-evidence-${ru
 const selected = (name) => !options.only || options.only.includes(name);
 
 const API_SUITES = [
+  { name: "operations", script: "check:operations", databaseEnv: "OPERATIONS_CHECK_DATABASE", prefix: "pandora_operations_check" },
   { name: "catalog", script: "check:catalog", databaseEnv: "CATALOG_CHECK_DATABASE", prefix: "pandora_catalog_check" },
   { name: "inventory", script: "check:inventory", databaseEnv: "INVENTORY_CHECK_DATABASE", prefix: "pandora_inventory_check" },
   { name: "orders", script: "check:orders", databaseEnv: "ORDERS_CHECK_DATABASE", prefix: "pandora_orders_check" },
@@ -41,6 +42,7 @@ const API_SUITES = [
 ];
 // Suites in one group share a seeded database; suites that change the same seed orders are in separate groups.
 const BROWSER_GROUPS = [
+  { name: "operations", suites: [{ file: "operations-browser", evidenceEnv: "OPERATIONS_CHECK_EVIDENCE" }] },
   { name: "fulfillment", suites: [{ file: "fulfillment-browser", evidenceEnv: "FULFILLMENT_CHECK_EVIDENCE" }] },
   {
     name: "processing",

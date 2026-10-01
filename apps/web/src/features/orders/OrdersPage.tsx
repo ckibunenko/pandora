@@ -6,6 +6,7 @@ import { formatPrice } from "../catalog/catalog-api";
 import catalogStyles from "../catalog/Catalog.module.css";
 import { ORDERS_QUERY_KEY, STATUS_LABELS, createOrder, useOrders } from "./orders-api";
 import styles from "./Orders.module.css";
+import { ListPagination } from "../../components/ListPagination";
 
 const formatDate = (iso: string) => new Date(iso).toLocaleString("en-GB", { timeZone: "Europe/Belgrade" });
 
@@ -116,7 +117,7 @@ export function OrdersPage() {
           ) : (
             <div className={catalogStyles.tableScroll}>
               <table className={catalogStyles.table}>
-                <caption className={catalogStyles.srOnly}>Orders, newest first</caption>
+                <caption className={catalogStyles.srOnly}>Orders, {params.get("sort") === "submitted_asc" ? "oldest submission first" : "newest first"}</caption>
                 <thead>
                   <tr>
                     <th>Order</th>
@@ -155,27 +156,14 @@ export function OrdersPage() {
               </table>
             </div>
           )}
-          <nav className={catalogStyles.pagination} aria-label="Order pages">
-            <span data-test="orders-page">
-              Page {orders.data.page} of {Math.max(1, Math.ceil(orders.data.total / orders.data.pageSize))}
-            </span>
-            <button
-              className={catalogStyles.secondary}
-              disabled={orders.data.page <= 1}
-              onClick={() => change("page", String(orders.data.page - 1))}
-              data-test="orders-previous"
-            >
-              Previous
-            </button>
-            <button
-              className={catalogStyles.secondary}
-              disabled={orders.data.page * orders.data.pageSize >= orders.data.total}
-              onClick={() => change("page", String(orders.data.page + 1))}
-              data-test="orders-next"
-            >
-              Next
-            </button>
-          </nav>
+          <ListPagination
+            label="Order pages"
+            prefix="orders"
+            page={orders.data.page}
+            pageSize={orders.data.pageSize}
+            total={orders.data.total}
+            onChange={change}
+          />
         </>
       )}
     </>

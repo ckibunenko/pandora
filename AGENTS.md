@@ -47,6 +47,7 @@ Focused feature checks exist, each against its own empty QA database (never the 
 - Fulfillment: `apps/api/checks/fulfillment.mjs` (`pnpm --filter @pandora/api check:fulfillment`) and `apps/web/checks/fulfillment-browser.mjs`. See `context/features/fulfillment-verification.md`.
 - Organization and user administration: `apps/api/checks/administration.mjs` (`pnpm --filter @pandora/api check:admin`) and `apps/web/checks/admin-browser.mjs`. See `context/features/admin-management-verification.md`.
 - Bug Lab: `apps/api/checks/bug-lab.mjs` (`pnpm --filter @pandora/api check:bug-lab`); see `context/features/bug-lab-verification.md`.
+- Audit search and operational pagination: `apps/api/checks/operations.mjs` (`pnpm --filter @pandora/api check:operations`) and `apps/web/checks/operations-browser.mjs`. See `context/features/phase-2-operations-verification.md`.
 - Sign-in rate limiting and session cleanup: `apps/api/checks/auth.mjs` (`pnpm --filter @pandora/api check:auth`) and `apps/web/checks/auth-browser.mjs`. See `context/features/auth-hardening-verification.md`.
 - Browser checks drive local Chrome through `apps/web/checks/cdp.mjs` (DevTools protocol, no extra dependencies).
 
@@ -121,6 +122,7 @@ pnpm workspace monorepo following the target in `context/coding-standards.md`:
     - It runs the work inside `runSerializable` (`src/infrastructure/prisma/serializable.ts`: Serializable isolation, whole-transaction retry up to 3 attempts, then 409 `CONCURRENT_MODIFICATION`).
     - Inside the work: reread state → validate → update → movement → `recordAudit` (`src/common/audit/audit.ts`), all in the same transaction.
     - The work may run more than once, so it must not perform external side effects.
+  - Audit (`src/modules/audit/`): staff-only read/search of existing business events with exact filters, inclusive UTC dates, RepeatableRead pagination and recorded before/after details. Administrators see all entity types; operators see only orders/inventory, with 404 for restricted details. Acting organization is historical actor attribution; displayed names are current. UI lives in `apps/web/src/features/audit/`.
   - Auth (`src/modules/auth/`): global guards run in order session → CSRF → roles. Every route requires a session unless marked `@Public()`; restrict by role with `@Roles(...)`; read the caller with `@CurrentAuth()`. Unsafe methods need the `X-CSRF-Token` header from the session response.
     - Sign-in is limited to 5 attempts per normalized email per 15 minutes (`LoginRateLimiter`), with 429 `TOO_MANY_LOGIN_ATTEMPTS` and `Retry-After`. Unknown emails are handled identically. Attempts are stored only as SHA-256 digests in `login_attempts`, and a per-email advisory lock covers only the count-and-record step.
     - `SessionCleanupService` removes sessions that have been unusable for more than 24 hours, and attempts older than the window. It runs at startup and every `SESSION_CLEANUP_INTERVAL_SECONDS` (optional, default 3600).

@@ -1,6 +1,5 @@
 import type { InventoryItem, InventoryMovement } from "@pandora/contracts";
-import { useState } from "react";
-import { Link, Outlet, useParams } from "react-router";
+import { Link, Outlet, useParams, useSearchParams } from "react-router";
 import { ApiError } from "../../lib/api-client";
 import { useSession } from "../auth/session";
 import { languageLabel } from "../catalog/catalog-api";
@@ -8,6 +7,7 @@ import catalogStyles from "../catalog/Catalog.module.css";
 import { useInventoryItem, useMovements } from "./inventory-api";
 import styles from "./Inventory.module.css";
 import { AdjustmentForm, ReceiptForm } from "./StockForms";
+import { ListPagination } from "../../components/ListPagination";
 
 const MOVEMENT_LABELS: Record<InventoryMovement["type"], string> = {
   opening_balance: "Opening balance",
@@ -40,8 +40,14 @@ function StockSummary({ item }: { item: InventoryItem }) {
 }
 
 function MovementHistory({ variantId }: { variantId: string }) {
-  const [page, setPage] = useState(1);
-  const movements = useMovements(variantId, page);
+  const [params, setParams] = useSearchParams();
+  const movements = useMovements(variantId, params.toString());
+  function change(key: string, value: string) {
+    const next = new URLSearchParams(params);
+    next.set(key, value);
+    if (key !== "page") next.delete("page");
+    setParams(next);
+  }
   return (
     <section className={styles.history} aria-labelledby="movement-history">
       <h2 id="movement-history">Movement history</h2>
@@ -91,27 +97,14 @@ function MovementHistory({ variantId }: { variantId: string }) {
               </tbody>
             </table>
           </div>
-          <nav className={catalogStyles.pagination} aria-label="Movement pages">
-            <span data-test="movement-page">
-              Page {movements.data.page} of {Math.max(1, Math.ceil(movements.data.total / movements.data.pageSize))}
-            </span>
-            <button
-              className={catalogStyles.secondary}
-              disabled={page <= 1}
-              onClick={() => setPage(page - 1)}
-              data-test="movement-previous"
-            >
-              Previous
-            </button>
-            <button
-              className={catalogStyles.secondary}
-              disabled={page * movements.data.pageSize >= movements.data.total}
-              onClick={() => setPage(page + 1)}
-              data-test="movement-next"
-            >
-              Next
-            </button>
-          </nav>
+          <ListPagination
+            label="Movement pages"
+            prefix="movement"
+            page={movements.data.page}
+            pageSize={movements.data.pageSize}
+            total={movements.data.total}
+            onChange={change}
+          />
         </>
       )}
     </section>
@@ -164,14 +157,14 @@ export function InventoryItemPage() {
 }
 
 /** Inventory is distributor staff only; retailers see availability through the catalog. */
-export function RequireStaff() {
+export function RequireStaff({ area = "Inventory" }: { area?: string }) {
   const session = useSession();
   const role = session.data?.user.role;
   if (role !== "operator" && role !== "administrator") {
     return (
       <section>
         <h1>Access restricted</h1>
-        <p>Inventory is available to distributor staff.</p>
+        <p>{area} is available to distributor staff.</p>
         <Link to="/catalog">Return to catalog</Link>
       </section>
     );
