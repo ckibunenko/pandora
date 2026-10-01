@@ -17,8 +17,8 @@ export const fetchInventory = (query: string) =>
   request(`/inventory?${query}`, { parse: (body) => inventoryListResponseSchema.parse(body) });
 export const fetchInventoryItem = (variantId: string) =>
   request(`/inventory/${variantId}`, { parse: (body) => inventoryItemSchema.parse(body) });
-export const fetchMovements = (variantId: string, page: number) =>
-  request(`/inventory/${variantId}/movements?page=${page}`, {
+export const fetchMovements = (variantId: string, query: string) =>
+  request(`/inventory/${variantId}/movements?${query}`, {
     parse: (body) => movementListResponseSchema.parse(body),
   });
 
@@ -53,8 +53,8 @@ function useStaffQuery<T>(key: readonly unknown[], queryFn: () => Promise<T>, en
 export const useInventory = (query: string) => useStaffQuery(["list", query], () => fetchInventory(query));
 export const useInventoryItem = (variantId: string) =>
   useStaffQuery(["item", variantId], () => fetchInventoryItem(variantId), !!variantId);
-export const useMovements = (variantId: string, page: number) =>
-  useStaffQuery(["movements", variantId, page], () => fetchMovements(variantId, page), !!variantId);
+export const useMovements = (variantId: string, query: string) =>
+  useStaffQuery(["movements", variantId, query], () => fetchMovements(variantId, query), !!variantId);
 
 /** Parses a signed whole number typed by staff; returns undefined for anything else. */
 export function parseWholeNumber(value: string, allowNegative: boolean): number | undefined {

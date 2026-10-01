@@ -95,6 +95,7 @@ try {
     await fill("[data-test=field-user-password]", FIRST_PASSWORD);
     await click("[data-test=user-save]");
     await waitFor(`!!${q("[data-test=user-created]")}`, "user created");
+    await waitFor(`!!${q("[data-test=user-email]")}`, "created user details loaded");
     assert.equal(await text("[data-test=user-email]"), "mia@meeple-market.test");
     userPath = await evaluate("location.pathname");
 

@@ -12,13 +12,14 @@ import { HealthModule } from "./modules/health/health.module.js";
 import { CatalogModule } from "./modules/catalog/catalog.module.js";
 import { InventoryModule } from "./modules/inventory/inventory.module.js";
 import { OrdersModule } from "./modules/orders/orders.module.js";
+import { AuditModule } from "./modules/audit/audit.module.js";
 
 @Module({})
 export class AppModule {
   static forRoot(config: AppConfig): DynamicModule {
     return {
       module: AppModule,
-      imports: [AppConfigModule.forRoot(config), ClockModule, PrismaModule, BugLabModule, AuthModule, HealthModule, CatalogModule, InventoryModule, OrdersModule, AdministrationModule],
+      imports: [AppConfigModule.forRoot(config), ClockModule, PrismaModule, BugLabModule, AuthModule, HealthModule, CatalogModule, InventoryModule, OrdersModule, AdministrationModule, AuditModule],
       providers: [{ provide: APP_FILTER, useClass: ApiExceptionFilter }],
     };
   }

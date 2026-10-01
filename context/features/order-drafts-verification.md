@@ -54,7 +54,7 @@ Covered groups (16):
 7. **Submit:** incomplete reviewed prices or an empty draft return 422; price drift returns `PRICE_CHANGED`; a correct submission freezes the snapshot and total. A replay returns the identical body. Saving or submitting again afterwards returns `INVALID_ORDER_TRANSITION`.
 8. **Frozen after submission:** catalog price, edition, and name changes after submission do not change the submitted order.
 9. **Cancel:** works from a draft (the reason is trimmed) and from a submitted order (the frozen total is kept), attributed to the actor; a repeated cancel returns `INVALID_ORDER_TRANSITION` and a stale version returns `VERSION_CONFLICT`.
-10. **Concurrency, saves:** two parallel saves with the same version give exactly one 200 and one `VERSION_CONFLICT`.
+10. **Concurrency, saves:** two parallel saves with the same version give exactly one 200 and one 409 (`VERSION_CONFLICT`, or `CONCURRENT_MODIFICATION` after exhaustion of the shared retry budget). Persisted lines match the winner, the version advances once and one audit is written. A subsequent stale-version retry returns `VERSION_CONFLICT` without changing the order or audit. Clarified in PR #6 after CI exercised retry exhaustion; API behavior is unchanged.
 11. **Concurrency, submissions:** five parallel identical submissions with one key submit once (one version increment, one audit event).
 12. **Rollback:** an injected audit failure returns 500 and leaves the draft unsubmitted and unfrozen, with no idempotency record; the same key then succeeds.
 13. **Database constraints:** these direct SQL writes are rejected:

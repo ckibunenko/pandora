@@ -293,17 +293,29 @@ try {
     assert.equal(await db.auditEvent.count({ where: { action: "cancelled" } }), 2);
   });
 
-  await check("concurrency: parallel saves with one version → one success, one VERSION_CONFLICT", async () => {
+  await check("concurrency: parallel saves commit once; the losing request cannot overwrite the winner", async () => {
     const draft = (await call("/orders", { actor: lantern, method: "POST", body: {}, key: randomUUID() })).body;
     const results = await Promise.all(
       [lov, swaGi].map((v) =>
         call(`/orders/${draft.id}/lines`, { actor: lantern, method: "PUT", body: { version: 1, lines: [{ variantId: v.id, quantity: 1 }] } }),
       ),
     );
-    const statuses = results.map((r) => (r.status === 200 ? "200" : r.body.code)).sort();
-    assert.deepEqual(statuses, ["200", "VERSION_CONFLICT"], statuses.join(","));
+    assert.equal(results.filter((result) => result.status === 200).length, 1, JSON.stringify(results));
+    const winnerIndex = results.findIndex((result) => result.status === 200);
+    const loserIndex = 1 - winnerIndex;
+    const loser = results[loserIndex];
+    assert.equal(loser.status, 409);
+    errorEnvelopeSchema.parse(loser.body);
+    assert.ok(["VERSION_CONFLICT", "CONCURRENT_MODIFICATION"].includes(loser.body.code), JSON.stringify(loser.body));
     const stored = await db.order.findUniqueOrThrow({ where: { id: draft.id }, include: { lines: true } });
     assert.deepEqual([stored.version, stored.lines.length], [2, 1]);
+    assert.equal(stored.lines[0].variantId, [lov, swaGi][winnerIndex].id);
+    assert.equal(await db.auditEvent.count({ where: { entityId: draft.id, action: "lines_updated" } }), 1);
+    assertError(await call(`/orders/${draft.id}/lines`, {
+      actor: lantern, method: "PUT", body: { version: 1, lines: [{ variantId: [lov, swaGi][loserIndex].id, quantity: 1 }] },
+    }), 409, "VERSION_CONFLICT");
+    assert.deepEqual(await db.order.findUniqueOrThrow({ where: { id: draft.id }, include: { lines: true } }), stored);
+    assert.equal(await db.auditEvent.count({ where: { entityId: draft.id, action: "lines_updated" } }), 1);
   });
 
   await check("concurrency: parallel identical submissions with one key submit once", async () => {

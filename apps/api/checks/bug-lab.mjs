@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -177,10 +177,14 @@ try {
       assert.match(manifest.appVersion.commit, /^[0-9a-f]{40}$/);
       assert.equal(typeof manifest.appVersion.dirty, "boolean");
       assert.match(manifest.seedVersion, /^[0-9a-f]{16}$/);
-      assert.match(manifest.latestMigration, /bug_lab_marker$/);
+      const latestMigration = readdirSync(join(root, "prisma/migrations"), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort().at(-1);
+      assert.equal(manifest.latestMigration, latestMigration, "manifest identifies the current migration history");
       const stored = readFileSync(join(root, "bug-lab/runs", `${manifest.runId}.json`), "utf8");
       assert.ok(!/postgres(ql)?:\/\/|password/i.test(stored), "no credentials in the manifest");
       const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: urlFor(manifest.database) }) });
+      const [applied] = await db.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL ORDER BY migration_name DESC LIMIT 1`;
+      assert.equal(applied.migration_name, manifest.latestMigration, "manifest matches the applied database migration");
       const [row] = await db.$queryRaw`SELECT current_setting('pandora.defect', true) AS marker`;
       assert.equal(row.marker || null, manifest.defect);
       assert.equal(await db.order.count({ where: { organizationId: "01920000-0000-7000-8000-000000000002" } }), 45);

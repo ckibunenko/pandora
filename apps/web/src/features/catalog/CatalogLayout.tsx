@@ -41,9 +41,14 @@ export function CatalogLayout() {
             Orders
           </NavLink>
           {(user.role === "operator" || user.role === "administrator") && (
-            <NavLink to="/inventory" data-test="inventory-nav">
-              Inventory
-            </NavLink>
+            <>
+              <NavLink to="/inventory" data-test="inventory-nav">
+                Inventory
+              </NavLink>
+              <NavLink to="/audit" data-test="audit-nav">
+                Audit trail
+              </NavLink>
+            </>
           )}
           {user.role === "administrator" && (
             <>

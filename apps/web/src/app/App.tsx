@@ -22,6 +22,8 @@ import { UserPage } from "../features/admin/UserPage";
 import { UsersPage } from "../features/admin/UsersPage";
 import { OrderPage } from "../features/orders/OrderPage";
 import { OrdersPage } from "../features/orders/OrdersPage";
+import { AuditPage } from "../features/audit/AuditPage";
+import { AuditEventPage } from "../features/audit/AuditEventPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -75,6 +77,13 @@ const router = createBrowserRouter([
                 children: [
                   { path: "/inventory", element: <InventoryPage /> },
                   { path: "/inventory/:variantId", element: <InventoryItemPage /> },
+                ],
+              },
+              {
+                element: <RequireStaff area="The audit trail" />,
+                children: [
+                  { path: "/audit", element: <AuditPage /> },
+                  { path: "/audit/:eventId", element: <AuditEventPage /> },
                 ],
               },
             ],

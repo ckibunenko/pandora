@@ -1,0 +1,92 @@
+.filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  padding: var(--space-6) 0;
+  border-block: 1px solid var(--color-border);
+}
+
+.filters label {
+  min-width: 0;
+}
+
+.actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.identity {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+
+/* Keep identifiers readable; the table scrolls within its region on narrow screens. */
+.eventsTable {
+  min-width: 1000px;
+}
+
+.eventsTable td:first-child {
+  min-width: 190px;
+}
+
+.eventsTable td:nth-child(2) {
+  min-width: 260px;
+}
+
+.eventsTable td:nth-child(3) {
+  min-width: 220px;
+}
+
+.metadata {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-3) var(--space-6);
+  margin-bottom: var(--space-8);
+}
+
+.metadata dt {
+  color: var(--color-text-muted);
+}
+
+.metadata dd {
+  overflow-wrap: anywhere;
+}
+
+.snapshots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+.snapshots section {
+  min-width: 0;
+}
+
+.snapshots h2 {
+  margin-bottom: var(--space-4);
+}
+
+.snapshots pre {
+  padding: var(--space-6);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1000px) {
+  .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 680px) {
+  .filters, .snapshots { grid-template-columns: minmax(0, 1fr); }
+  .metadata { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
+  .metadata dd { margin-bottom: var(--space-4); }
+}
