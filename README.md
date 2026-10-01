@@ -20,7 +20,7 @@ Built so far:
 - Organization and user administration for administrators. Administrators create retailer stores and accounts, change staff roles, deactivate access, and reset passwords. These changes sign affected users out immediately, and the last administrator cannot be removed.
 - **Bug Lab** for QA practice: an isolated local environment where exactly one known defect (`BUG-001`–`BUG-003`) is switched on. It comes with a defect catalog, learner briefs, separate solutions, and run manifests; see [bug-lab/README.md](bug-lab/README.md). The same automated assertion passes in Standard mode and fails in the Bug Lab.
 
-- **Audit trail** (Phase 2 feature branch): staff search committed changes by entity, action, actor, acting organization, correlation ID and UTC time range, and inspect read-only before/after values. Administrators see all business audit; operators see orders and inventory only.
+- **Audit trail**: staff search committed changes by entity, action, actor, acting organization, correlation ID and UTC time range, and inspect read-only before/after values. Administrators see all business audit; operators see orders and inventory only.
 - Operational lists have 20/50/100 page controls; Orders and Movement history now preserve their pagination in the URL.
 
 Returns and notifications have not been built yet. The product scope and business rules are in [context/project-overview.md](context/project-overview.md).

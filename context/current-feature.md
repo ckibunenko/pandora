@@ -4,7 +4,7 @@ Phase 2 operational completion: searchable audit and complete pagination control
 
 ## Status
 
-Implemented and locally verified on `feature/phase-2-operations` (2026-10-01). Commit approved by the user; PR/CI and merge to `main` remain pending.
+Completed and merged to `main` as `5868e8e` through [PR #6](https://github.com/ckibunenko/pandora/pull/6) (2026-10-01). All three CI jobs passed on final PR head `fd943a3`, run `36825594931`.
 
 ## Goal
 
@@ -36,7 +36,7 @@ Staff can investigate committed changes and navigate operational datasets beyond
 - Fixed the obsolete Bug Lab check that assumed its marker migration would always be last. It now compares the manifest with current repository migrations and the actual applied migration; no defect behavior changed.
 - Added one audit-index migration, verified on fresh QA databases. Development/demo databases remain unchanged. No dependencies added.
 - Full details and reproduction: [verification](features/phase-2-operations-verification.md).
-- Phase 2 implementation and local verification are complete; GitHub CI and merge remain pending. Phase 3 (returns/notifications) and public deployment remain planned.
+- Phase 2 is complete and merged: audit search, operational pagination, line/quantity cancellation, concurrency acceptance and the three initial Bug Lab defects. [Final PR CI](https://github.com/ckibunenko/pandora/actions/runs/36825594931): typecheck/lint/build, all ten API suites and all six browser groups passed. Phase 3 (returns/notifications) and public deployment remain planned.
 
 ## Previous feature
 
@@ -61,3 +61,4 @@ Staff can investigate committed changes and navigate operational datasets beyond
 - Bug Lab (2026-09-30, Phase 2): exactly one `BUG_LAB_DEFECT` (`BUG-001` persisted wrong fulfillment status, `BUG-002` off-by-one page offset, `BUG-003` current prices on frozen lines), refused in production, on non-`pandora_buglab…` databases, or on a marker mismatch. Includes `pnpm bug-lab setup|start` with scenario fixtures and run manifests, and a catalog, briefs, and solutions in `bug-lab/`. `check:bug-lab` 7/7: the same assertion passes on Standard and fails for the intended reason for each defect; locally `check:all` 14/14; CI green on PR #3; see [features/bug-lab-verification.md](features/bug-lab-verification.md). Merged to `main` as `277925e`.
 - Minimal UI polish (2026-10-01): original generated SVG cover art per product (deterministic from the product ID; five warm palettes, four motifs, expansion ribbon); catalog cards with depth and a hover/focus lift; product cover capped at 480 px; branded sign-in page. No selector, behavior, or API changes. `check:all` 14/14; manual checks at 390 and 360 px, keyboard focus, no page errors; CI green on PR #4. Merged to `main` as `bf6f472`.
 - Line-level cancellation requests (2026-10-01, Phase 2): retailers choose which lines and how many unshipped units to cancel (optional `items`; omitted still means everything outstanding), with the new 409 `CANCELLATION_QUANTITY_EXCEEDED`; staff still approve or reject the whole request, and a partial approval keeps the order open. No migration or seed change; audit records `scope`. Fulfillment checks 14/14 API and 10/10 browser; `check:all` 14/14; CI green on PR #5. Merged to `main` as `37bb2d4`.
+- Phase 2 operational completion (2026-10-01): read-only staff audit search/detail with role scope, exact filters and audit indexes; complete order/movement pagination and URL state, multi-page authorization acceptance. New checks: API 9/9, browser 7/7; local full `check:all` 16/16. Corrected existing administration browser synchronization and aligned draft concurrency coverage with the shared retry-exhaustion contract, while adding persisted-winner/audit/stale-retry assertions. All three CI jobs passed on PR #6, run `36825594931`. Merged to `main` as `5868e8e`; Phase 2 is complete. Next: Phase 3 returns, then durable notifications. See [verification](features/phase-2-operations-verification.md).

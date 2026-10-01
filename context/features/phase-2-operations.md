@@ -4,7 +4,7 @@ Phase 2 operational completion: searchable audit and complete pagination control
 
 ## Status
 
-Implemented and locally verified on `feature/phase-2-operations` (2026-10-01). Commit approved by the user; PR/CI and merge to `main` remain pending.
+Completed and merged to `main` as `5868e8e` through [PR #6](https://github.com/ckibunenko/pandora/pull/6) (2026-10-01). All three CI jobs passed on final PR head `fd943a3`, run `36825594931`.
 
 ## Goal
 
@@ -35,9 +35,9 @@ Staff can investigate committed changes and navigate operational datasets beyond
 - Reviewed desktop and narrow screenshots, with keyboard checks and no page overflow at 390, 1024, 1100 and 1280px. Evidence: `/private/tmp/pandora-phase2-final-evidence/operations-browser/`.
 - Fixed the obsolete Bug Lab check that assumed its marker migration would always be last. It now compares the manifest with current repository migrations and the actual applied migration; no defect behavior changed.
 - Added one audit-index migration, verified on fresh QA databases. Development/demo databases remain unchanged. No dependencies added.
-- Full details and reproduction: [verification](features/phase-2-operations-verification.md).
-- Phase 2 implementation and local verification are complete; GitHub CI and merge remain pending. Phase 3 (returns/notifications) and public deployment remain planned.
+- Full details and reproduction: [verification](phase-2-operations-verification.md).
+- Phase 2 is complete and merged: audit search, operational pagination, line/quantity cancellation, concurrency acceptance and the three initial Bug Lab defects. [Final PR CI](https://github.com/ckibunenko/pandora/actions/runs/36825594931): typecheck/lint/build, all ten API suites and all six browser groups passed. Phase 3 (returns/notifications) and public deployment remain planned.
 
 ## Previous feature
 
-[Line-level cancellation](features/line-cancellation.md) merged as `37bb2d4` through PR #5; all three CI jobs passed. The remaining Phase 2 scope is addressed in this feature. Returns and notifications belong to Phase 3.
+[Line-level cancellation](line-cancellation.md) merged as `37bb2d4` through PR #5; all three CI jobs passed. The remaining Phase 2 scope is addressed in this feature. Returns and notifications belong to Phase 3.
