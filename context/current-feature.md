@@ -4,7 +4,7 @@ Returns (Phase 3, part 1). A retailer asks to return shipped units, staff approv
 
 ## Status
 
-In progress on `feature/returns`.
+Completed — merged to `main` as `e66fb6b` (2026-10-01) through PR #7; CI run `36828935735` passed all 3 jobs.
 
 ## Goal
 
@@ -153,3 +153,4 @@ Order audit events (entity `order`, so operators see them in audit search):
 - Minimal UI polish (2026-10-01): original generated SVG cover art per product (deterministic from the product ID; five warm palettes, four motifs, expansion ribbon); catalog cards with depth and a hover/focus lift; product cover capped at 480 px; branded sign-in page. No selector, behavior, or API changes. `check:all` 14/14; manual checks at 390 and 360 px, keyboard focus, no page errors; CI green on PR #4. Merged to `main` as `bf6f472`.
 - Line-level cancellation requests (2026-10-01, Phase 2): retailers choose which lines and how many unshipped units to cancel (optional `items`; omitted still means everything outstanding), with the new 409 `CANCELLATION_QUANTITY_EXCEEDED`; staff still approve or reject the whole request, and a partial approval keeps the order open. No migration or seed change; audit records `scope`. Fulfillment checks 14/14 API and 10/10 browser; `check:all` 14/14; CI green on PR #5. Merged to `main` as `37bb2d4`.
 - Phase 2 operational completion (2026-10-01): read-only staff audit search/detail with role scope, exact filters and audit indexes; complete order/movement pagination and URL state, multi-page authorization acceptance. New checks: API 9/9, browser 7/7; local full `check:all` 16/16. Corrected existing administration browser synchronization and aligned draft concurrency coverage with the shared retry-exhaustion contract, while adding persisted-winner/audit/stale-retry assertions. All three CI jobs passed on PR #6, run `36825594931`. Merged to `main` as `5868e8e`; Phase 2 is complete. Next: Phase 3 returns, then durable notifications. See [verification](features/phase-2-operations-verification.md).
+- Returns (2026-10-01, Phase 3 part 1): retailers request shipped units back with a reason; staff approve or reject the whole request and record one receipt that splits units into sellable and damaged stock (`RETURN` movements). Entitlement per shipment item is enforced in the transaction and by a database trigger (`RETURN_QUANTITY_EXCEEDED`), with the new `INVALID_RETURN_TRANSITION`; returns never change the order. Orders list filter for open returns, seed `RT-000001`, demo reset covers the new tables. `check:returns` 11/11, returns browser 8/8, `check:all` 18/18; CI green on PR #7. Merged to `main` as `e66fb6b`; see [verification](features/returns-verification.md).

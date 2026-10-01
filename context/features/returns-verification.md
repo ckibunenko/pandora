@@ -76,6 +76,7 @@ pnpm check:all
 ## Status and limits
 
 - **Full `pnpm check:all`** (run `20261001_070746`): 18 of 18 suites passed, including the build. There are now eleven API suites and seven browser groups.
+- **CI:** run `36828935735` on PR #7 passed all three jobs. Merged to `main` as `e66fb6b`.
 - Screenshots of the staff review, the narrow request form, the narrow receipt form, and the received return were inspected.
 - **Not covered:**
   - The Docker demo stack (`demo-reset-browser.mjs`) was not run. The database-level demo reset check covers the new tables.
