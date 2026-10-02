@@ -38,12 +38,16 @@ try {
   if (await compose(["ps", "--status", "running", "-q", "api", "worker"], true)) {
     throw new Error("The demo API or worker is still running; refusing to restore data.");
   }
-  await compose(["up", "-d", "--wait", "--wait-timeout", "60", "postgres", "web", "mailpit"]);
+  await compose(["up", "-d", "--wait", "--wait-timeout", "60", "postgres", "web", "mailpit", "caddy"]);
+  // Mailpit keeps messages in a temporary database that is discarded on stop, so a restart empties the inbox:
+  // emails about orders that the restore removes must not stay visible.
+  await compose(["restart", "--timeout", "10", "mailpit"]);
   await compose(["run", "--rm", "--no-deps", "reset", "node", "node_modules/prisma/build/index.js", "migrate", "deploy"]);
   await compose(["run", "--rm", "--no-deps", "reset"]);
   await compose(["up", "-d", "--no-deps", "--wait", "--wait-timeout", "60", "api", "worker"]);
   await control("rm", "/maintenance/enabled");
-  console.log(`Demo restored: http://localhost:${process.env.DEMO_PORT ?? "5180"}. Sign in again.`);
+  const port = process.env.DEMO_HTTPS_PORT ?? "5443";
+  console.log(`Demo restored: https://${process.env.DEMO_DOMAIN ?? "localhost"}${port === "443" ? "" : `:${port}`}. Sign in again.`);
 } catch (error) {
   if (locked) {
     // Covers errors after API startup too: an unhealthy or partly started stack must stay closed.

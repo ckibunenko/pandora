@@ -1,0 +1,14 @@
+# Restores the public demo to its fixtures (maintenance, stop writers, restore, restart; fails closed).
+# Install: see context/features/public-demo-runbook.md. Adjust WorkingDirectory and User to the deployment.
+[Unit]
+Description=Pandora demo reset (restore fixtures behind maintenance)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pandora
+WorkingDirectory=/opt/pandora
+ExecStart=/usr/bin/node --env-file=.env.demo scripts/demo-reset.mjs
+TimeoutStartSec=15min

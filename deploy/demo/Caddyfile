@@ -1,0 +1,38 @@
+# Public entry point of the demo: HTTPS, security headers, the read-only captured inbox at /mail/, and the app.
+# Locally DEMO_TLS=internal (Caddy's own CA); on a server set DEMO_DOMAIN to the public name and DEMO_TLS to an
+# ACME contact email so Caddy obtains and renews Let's Encrypt certificates automatically.
+{
+	http_port {$DEMO_PORT}
+	https_port {$DEMO_HTTPS_PORT}
+	admin off
+}
+
+# Explicit redirect: Caddy's automatic one drops a non-default HTTPS port (local runs). On 443 browsers normalize it away.
+http://{$DEMO_DOMAIN} {
+	redir https://{host}:{$DEMO_HTTPS_PORT}{uri} 308
+}
+
+{$DEMO_DOMAIN} {
+	tls {$DEMO_TLS}
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "{$DEMO_HSTS}"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		-Server
+	}
+
+	# The captured inbox is public but read-only: deleting, marking read, and the Send API are refused here.
+	# The refusal must live inside this handle block; `handle` runs before a top-level `respond`.
+	handle /mail* {
+		@write not method GET HEAD
+		respond @write "The demo inbox is read-only." 405
+		reverse_proxy mailpit:8025
+	}
+
+	handle {
+		reverse_proxy web:8080
+	}
+}

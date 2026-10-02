@@ -72,11 +72,11 @@ CI uses CI-only credentials and no repository secrets. There is no unit-test fra
 
 ## Isolated demo
 
-- `compose.demo.yml` and `.env.demo.example` define a separate local demo; only the web port (5180 by default) and the demo Mailpit UI (5181) are published on loopback. Development still uses `docker-compose.yml` and `.env`.
+- `compose.demo.yml` and `.env.demo.example` define a separate local demo. Only Caddy is published (loopback by default: HTTP 5180 redirects to HTTPS 5443 with Caddy's internal CA); it routes `/mail/*` to the read-only captured inbox (non-GET/HEAD refused with 405) and everything else to the web container. Session cookies are `Secure`. Development still uses `docker-compose.yml` and `.env`.
 - `pnpm demo:build` builds API/web images; `pnpm demo:reset` is destructive **only to the dedicated demo**. It persists maintenance, stops the API and the notification worker, deploys migrations, atomically restores fixtures/session/idempotency state, waits for readiness, then reopens. Failure stays in maintenance.
 - Shared fixtures live in `apps/api/src/seed/seed-data.ts`; normal `db:seed` remains development/test-only. `restore-demo-data.ts` is an operator-only transaction, not an API operation.
 - Verification: `DEMO_CHECK_DATABASE=pandora_demo_check_<unique> pnpm --filter @pandora/api check:demo-reset` on an empty QA database; `apps/web/checks/demo-reset-browser.mjs` on a disposable `pandora-demo-qa-*` Compose project. See [runbook and evidence](context/features/demo-reset-verification.md).
-- No scheduler/public deployment is installed. Any further worker must join the reset stop/start lifecycle; new tables need explicit reset review.
+- Public deployment is prepared but not installed (hosting undecided): `deploy/demo/Caddyfile` (`DEMO_DOMAIN`, `DEMO_TLS`, `DEMO_BIND`, `DEMO_HSTS`), `deploy/demo/systemd/pandora-demo-reset.{service,timer}` (daily 03:00 Europe/Belgrade), and the [public demo runbook](context/features/public-demo-runbook.md). Any further worker must join the reset stop/start lifecycle; new tables need explicit reset review.
 
 ## Bug Lab
 

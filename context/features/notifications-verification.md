@@ -37,7 +37,7 @@
 - **Inboxes:**
   - Development: Mailpit in `docker-compose.yml` (SMTP 1025, UI 8025).
   - Bug Lab: `mailpit-buglab`, Compose profile `bug-lab` (SMTP 1026, UI 8026); `pnpm bug-lab start` also starts a worker.
-  - Demo: `worker` and `mailpit` in `compose.demo.yml` (loopback UI `DEMO_MAIL_PORT`, default 5181).
+  - Demo: `worker` and `mailpit` in `compose.demo.yml`; the inbox UI was on loopback port 5181 and is now served read-only at `/mail/` behind Caddy (public demo preparation).
 - **Demo reset:** stops and starts the API and the worker, and truncates the notification tables.
 
 ## Reproduction
