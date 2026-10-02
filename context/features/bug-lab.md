@@ -56,7 +56,7 @@ QA learners get reproducible, realistic defects with a catalog entry, a learner 
 
 ## Implementation results (2026-09-30)
 
-- Evidence and details: [features/bug-lab-verification.md](features/bug-lab-verification.md).
+- Evidence and details: [features/bug-lab-verification.md](bug-lab-verification.md).
 - `check:bug-lab` passes 7 of 7:
   - configuration refusals;
   - the same assertion passing on Standard and failing for the intended reason for each defect;
