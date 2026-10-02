@@ -4,7 +4,7 @@ Public demo preparation (provider-independent). Everything the public demo needs
 
 ## Status
 
-In progress on `feature/public-demo-prep`.
+Implemented and merged to `main` as `510584f` through PR #10 (2026-10-02). Hosting remains undecided.
 
 ## Scope and decisions (2026-10-01)
 

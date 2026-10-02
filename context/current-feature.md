@@ -4,14 +4,14 @@ UX/UI improvements within Pandora’s existing warm visual direction, followed b
 
 ## Status
 
-Implemented and verified on `feature/ux-ui-improvements`; second UI/UX/design review complete. The user authorized commit and push on 2026-10-01; PR/merge remain pending. The user authorized continuing with the proposed direction and requested another UI/UX/design review after implementation (2026-10-01).
+Implemented and verified on `feature/ux-ui-improvements`; second UI/UX/design review complete. The user authorized commit and push on 2026-10-01; on 2026-10-02 the branch was rebased onto `main` after the public demo preparation merged, and its PR is open for review. The user authorized continuing with the proposed direction and requested another UI/UX/design review after implementation (2026-10-01).
 
 ## Scope and decisions
 
 - Preserve existing colors, Georgia/system fonts, artwork, navigation, role access, business behavior, API contracts and selectors.
 - Improve keyboard navigation and table scrolling, filters/pagination, status badges, forms/feedback, sign-in controls, and the specific order empty-state/operator-audit copy issues recorded in the brief.
 - Browser verification on isolated QA resources, relevant existing browser suites, typecheck, lint and build. Record evidence and a severity-ranked second review.
-- Branch starts at `40be2c8` and includes the existing public-demo preparation commit. Its separate PR/merge remains pending; no hosting or public deployment is authorized by this UI task.
+- Branch originally started at `40be2c8` (public demo preparation). After that merged through PR #10 as `510584f`, the branch was rebased onto `main` (2026-10-02). No hosting or public deployment is authorized by this UI task.
 - Implementation and verification happen before requesting commit permission, as required by [ai-interaction.md](ai-interaction.md).
 
 ## Implementation results (2026-10-01)
@@ -33,7 +33,7 @@ Implemented and verified on `feature/ux-ui-improvements`; second UI/UX/design re
 
 ## Previous feature
 
-[Public demo preparation](features/public-demo-prep.md) is implemented and pushed on `feature/public-demo-prep`, but has no PR/merge yet. Its full specification and results are preserved there. Notifications are merged to main; phases 1–3 are complete.
+[Public demo preparation](features/public-demo-prep.md) merged to `main` as `510584f` through PR #10; its full specification and results are preserved there. Hosting remains undecided. Notifications are merged to main; phases 1–3 are complete.
 
 ## History
 
@@ -58,3 +58,4 @@ Implemented and verified on `feature/ux-ui-improvements`; second UI/UX/design re
 - Returns (2026-10-01, Phase 3 part 1): retailers request shipped units back with a reason; staff approve or reject the whole request and record one receipt that splits units into sellable and damaged stock (`RETURN` movements). Entitlement per shipment item is enforced in the transaction and by a database trigger (`RETURN_QUANTITY_EXCEEDED`), with the new `INVALID_RETURN_TRANSITION`; returns never change the order. Orders list filter for open returns, seed `RT-000001`, demo reset covers the new tables. `check:returns` 11/11, returns browser 8/8, `check:all` 18/18; CI green on PR #7. Merged to `main` as `e66fb6b`; see [verification](features/returns-verification.md).
 - Notifications (2026-10-01, Phase 3 part 2): transactional outbox for nine business events (one job per active recipient, deduplicated), a separate worker that delivers to a captured Mailpit inbox under a lease with bounded retries, ambiguous-attempt recording, and graceful release; controlled failure adapter outside production; staff diagnostics with redaction for operators and an idempotent, audited manual retry; Mailpit for development, demo, and a separate Bug Lab inbox; demo reset stops/starts the worker. `check:notifications` 12/12, notifications browser 4/4, Docker demo lifecycle 5/5, `check:all` 20/20; CI green on PR #8. Merged to `main` as `1c08d9b`; see [verification](features/notifications-verification.md).
 - Documentation link fix (2026-10-02): 27 relative links in seven `context/features/*.md` files carried a `features/` prefix copied from this file and resolved to missing `context/features/features/…` paths on GitHub; removed the prefix. Link check over all tracked Markdown: 0 broken internal links, 5/5 external links reachable. CI green on PR #9. Merged to `main` as `e33942b`.
+- Public demo preparation (2026-10-02): Caddy HTTPS entry as the only published demo service, `Secure` session cookies, read-only public inbox at `/mail/` (non-GET/HEAD refused with 405), systemd timer for the 03:00 Europe/Belgrade reset, and a provider-independent runbook. Docker demo lifecycle 6/6 over HTTPS; CI green on PR #10. Merged to `main` as `510584f`; hosting remains undecided. See [specification and results](features/public-demo-prep.md).
