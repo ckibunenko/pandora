@@ -153,7 +153,7 @@ No new seed records. The existing four organizations and six users already cover
 
 ## Implementation results (2026-09-30)
 
-- Implemented as specified. Evidence, reproduction steps, selectors, and limitations: [features/admin-management-verification.md](features/admin-management-verification.md).
+- Implemented as specified. Evidence, reproduction steps, selectors, and limitations: [features/admin-management-verification.md](admin-management-verification.md).
 - **API/PostgreSQL:** administration 12 of 12 on fresh QA databases, including parallel demotions, rollback, and database constraints.
 - **Regressions:** catalog 11, inventory 18, orders 16, processing 13, fulfillment 11, all passing.
 - **Browser:** administration 9 of 9; fulfillment 8, processing 7 plus inventory 9, and order drafts 11, each on its own fresh stack.
@@ -173,4 +173,4 @@ No new seed records. The existing four organizations and six users already cover
 
 ## Previous feature
 
-Fulfillment is completed and merged as `e7cf5af`. Specification and evidence: [features/fulfillment.md](features/fulfillment.md) and [features/fulfillment-verification.md](features/fulfillment-verification.md). Earlier features: [order processing](features/order-processing.md), [order drafts](features/order-drafts.md), [inventory](features/inventory.md), [catalog](features/catalog.md), [auth and sessions](features/auth-sessions.md). Still outstanding: login rate limiting, session cleanup, test/CI setup, audit foreign keys, shared UI primitives, and demo reset automation.
+Fulfillment is completed and merged as `e7cf5af`. Specification and evidence: [features/fulfillment.md](fulfillment.md) and [features/fulfillment-verification.md](fulfillment-verification.md). Earlier features: [order processing](order-processing.md), [order drafts](order-drafts.md), [inventory](inventory.md), [catalog](catalog.md), [auth and sessions](auth-sessions.md). Still outstanding: login rate limiting, session cleanup, test/CI setup, audit foreign keys, shared UI primitives, and demo reset automation.

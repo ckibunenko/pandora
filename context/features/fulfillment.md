@@ -116,7 +116,7 @@ Existing checks are updated to the new seed.
 
 ## Implementation results (2026-09-30)
 
-- Implemented as specified. Full evidence, reproduction steps, selectors, and limitations: [features/fulfillment-verification.md](features/fulfillment-verification.md).
+- Implemented as specified. Full evidence, reproduction steps, selectors, and limitations: [features/fulfillment-verification.md](fulfillment-verification.md).
 - **API/PostgreSQL:** 11 check groups passed on three fresh QA databases. They cover the conflict path, parallel shipments without over-shipping, a shipment racing an approval, rollback, and database constraints.
 - **Regressions:** processing 13, orders 16, inventory 18, and catalog 11, all passing and updated to the new seed.
 - **Browser:** fulfillment 8 of 8 on two fresh stacks; processing 7 and inventory 9 on one stack; order drafts 11 on another.
