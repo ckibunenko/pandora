@@ -1,6 +1,6 @@
 ## Current Feature
 
-Login rate limiting and expired-session cleanup. Repeated failed sign-ins for the same email are temporarily refused, and sessions that can no longer be used are removed automatically. Both items are carried over from the auth feature ([auth-sessions.md](features/auth-sessions.md): "needed before a public demo exists").
+Login rate limiting and expired-session cleanup. Repeated failed sign-ins for the same email are temporarily refused, and sessions that can no longer be used are removed automatically. Both items are carried over from the auth feature ([auth-sessions.md](auth-sessions.md): "needed before a public demo exists").
 
 ## Status
 
@@ -63,7 +63,7 @@ Guessing a password becomes impractical without revealing which accounts exist, 
 
 ## Implementation results (2026-09-30)
 
-- Evidence and details: [features/auth-hardening-verification.md](features/auth-hardening-verification.md).
+- Evidence and details: [features/auth-hardening-verification.md](auth-hardening-verification.md).
 - Full `pnpm check:all`: 13 of 13 pass (8 API suites, 5 browser groups). The new `auth` API check passed 5 of 5 on fresh databases, and the browser check passed 3 of 3.
 - **Corrections found by the checks:**
   - The first limiter could starve a parallel burst entirely (0 of 12 checked). A per-email advisory lock around "count, then record" now checks exactly 5.

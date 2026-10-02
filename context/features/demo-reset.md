@@ -36,5 +36,5 @@ Restore the fictional demo to its deterministic seed without touching the develo
 - Added the isolated Compose stack, operator reset CLI, transactional restoration, and a maintenance page/API envelope. Extracted the existing fixtures for reuse without changing normal seed behavior.
 - Database checks: 6/6. Docker lifecycle/browser checks: 5/5, including deliberately failed restoration and recovery. Administration regression: 12/12; fulfillment regression: 11/11.
 - Both Docker images, typecheck, lint, build, and diff checks passed; the existing Vite chunk-size warning remains.
-- [Runbook, reproduction commands, results, and limitations](features/demo-reset-verification.md).
+- [Runbook, reproduction commands, results, and limitations](demo-reset-verification.md).
 - Actual public hosting and the daily scheduler remain unconfigured. Next planned work: test/CI setup, login rate limiting, and expired-session cleanup.

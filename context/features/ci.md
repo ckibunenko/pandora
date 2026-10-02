@@ -56,7 +56,7 @@ A regression cannot reach `main` unnoticed: gates, API/PostgreSQL checks, and br
 
 ## Implementation results (2026-09-30)
 
-- Evidence and details: [features/ci-verification.md](features/ci-verification.md).
+- Evidence and details: [features/ci-verification.md](ci-verification.md).
 - `pnpm check:all` passes locally with 11 of 11 suites (7 API, 4 browser groups) in about 55 seconds.
 - The failure paths exit 1: a busy port, a broken Chrome, and no suite selected.
 - The first run exposed a leftover QA web server listening on IPv6 only, which the port check had missed. The check now covers IPv4 and IPv6.
