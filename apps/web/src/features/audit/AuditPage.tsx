@@ -54,10 +54,10 @@ export function AuditPage() {
     <>
       <div className={catalogStyles.heading}>
         <div>
-          <p className={catalogStyles.eyebrow}>{isAdmin ? "ALL BUSINESS CHANGES" : "ORDERS & INVENTORY"}</p>
+          <p className={catalogStyles.eyebrow}>{isAdmin ? "ALL BUSINESS CHANGES" : "ORDERS, INVENTORY & NOTIFICATIONS"}</p>
           <h1>Audit trail</h1>
           <p className={catalogStyles.muted}>
-            {isAdmin ? "Inspect committed changes across Pandora." : "Inspect committed changes to orders and warehouse stock."}
+            {isAdmin ? "Inspect committed changes across Pandora." : "Inspect committed changes to orders, warehouse stock and notification deliveries."}
             {" "}Filters match exact values. Acting organization identifies who made the change.
           </p>
         </div>

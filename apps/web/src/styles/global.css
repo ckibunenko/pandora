@@ -10,6 +10,9 @@
   --color-success: #2f6b3f;
   --color-danger: #a12a2a;
   --color-focus: #1f5fa8;
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  --color-success-soft: color-mix(in srgb, var(--color-success) 7%, var(--color-surface));
+  --color-danger-soft: color-mix(in srgb, var(--color-danger) 7%, var(--color-surface));
 
   --font-heading: Georgia, "Times New Roman", serif;
   --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -23,6 +26,7 @@
 
   --radius-sm: 4px;
   --radius-md: 8px;
+  --control-min-height: 44px;
 
   color-scheme: light;
 }

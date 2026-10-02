@@ -124,7 +124,7 @@ function Members({ organization }: { organization: AdminOrganization }) {
       {members.isError && <p role="alert">Could not load the users of this organization.</p>}
       {members.data && !members.data.items.length && <p className={catalogStyles.empty}>No users yet.</p>}
       {members.data && members.data.items.length > 0 && (
-        <div className={catalogStyles.tableScroll}>
+        <div className={catalogStyles.tableScroll} role="region" aria-label="Organization users" tabIndex={0}>
           <table className={catalogStyles.table} data-test="organization-members">
             <caption className={catalogStyles.srOnly}>Users of {organization.name}</caption>
             <thead>

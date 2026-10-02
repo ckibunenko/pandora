@@ -346,7 +346,7 @@ export function ReturnList({ order }: { order: Order }) {
       <ol data-test="return-list">
         {order.returns.map((entry) => (
           <li key={entry.id} data-test="return-row" data-return-number={entry.number} data-status={entry.status}>
-            <strong>{entry.number}</strong> · {RETURN_LABELS[entry.status]} · {describeReturn(entry)} · requested by{" "}
+            <strong>{entry.number}</strong> · <span className={styles.status} data-status={entry.status}>{RETURN_LABELS[entry.status]}</span> · {describeReturn(entry)} · requested by{" "}
             {entry.requestedBy.displayName} (“{entry.reason}”)
             {entry.decidedBy && entry.decidedAt ? ` · decided by ${entry.decidedBy.displayName} on ${formatDate(entry.decidedAt)}` : ""}
             {entry.decisionReason ? `: ${entry.decisionReason}` : ""}

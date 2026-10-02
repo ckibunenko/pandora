@@ -98,7 +98,7 @@ export function InventoryPage() {
               </button>
             </div>
           ) : (
-            <div className={catalogStyles.tableScroll}>
+            <div className={catalogStyles.tableScroll} role="region" aria-label="Inventory by SKU" tabIndex={0}>
               <table className={catalogStyles.table}>
                 <caption className={catalogStyles.srOnly}>Inventory by SKU</caption>
                 <thead>

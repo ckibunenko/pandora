@@ -94,7 +94,7 @@ export function OrganizationsPage() {
               </button>
             </div>
           ) : (
-            <div className={catalogStyles.tableScroll}>
+            <div className={catalogStyles.tableScroll} role="region" aria-label="Organizations" tabIndex={0}>
               <table className={catalogStyles.table}>
                 <caption className={catalogStyles.srOnly}>Organizations by name</caption>
                 <thead>

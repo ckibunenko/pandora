@@ -14,7 +14,7 @@ const describeItems = (items: CancellationRequest["items"]) => items.map((item) 
 
 function FulfillmentTable({ order }: { order: Order }) {
   return (
-    <div className={catalogStyles.tableScroll}>
+    <div className={catalogStyles.tableScroll} role="region" aria-label="Fulfillment by line" tabIndex={0}>
       <table className={catalogStyles.table}>
         <caption className={catalogStyles.srOnly}>Fulfillment by line</caption>
         <thead>
@@ -37,7 +37,7 @@ function FulfillmentTable({ order }: { order: Order }) {
                   {languageLabel(line.language)} · {line.edition} · {formatPrice(line.unitPriceMinor)} each
                 </small>
               </td>
-              <td>{line.sku}</td>
+              <td className={styles.sku}>{line.sku}</td>
               <td className={styles.number}>{line.quantity}</td>
               <td className={styles.number} data-test="order-line-shipped">
                 {line.shippedQuantity}
@@ -378,7 +378,7 @@ function Records({ order }: { order: Order }) {
           <ol data-test="cancellation-request-list">
             {order.cancellationRequests.map((request) => (
               <li key={request.id} data-test="cancellation-request-row" data-status={request.status}>
-                <strong>{request.status === "pending" ? "Pending" : request.status === "approved" ? "Approved" : "Rejected"}</strong> ·{" "}
+                <span className={styles.status} data-status={request.status}>{request.status === "pending" ? "Pending" : request.status === "approved" ? "Approved" : "Rejected"}</span> ·{" "}
                 {describeItems(request.items)} · requested by {request.requestedBy.displayName}
                 {request.reason ? ` (“${request.reason}”)` : ""}
                 {request.decidedBy && request.decidedAt

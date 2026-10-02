@@ -57,6 +57,7 @@
 }
 
 .field input {
+  min-height: var(--control-min-height);
   padding: var(--space-2) var(--space-3);
   font: inherit;
   color: var(--color-text);
@@ -82,6 +83,7 @@
 }
 
 .submit {
+  min-height: var(--control-min-height);
   padding: var(--space-2) var(--space-4);
   font: inherit;
   font-weight: 600;
@@ -90,6 +92,7 @@
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  transition: background-color 140ms ease;
 }
 
 .submit:hover:not(:disabled) {

@@ -188,7 +188,7 @@ function DraftEditor({ latest }: { latest: Order }) {
           </Link>
         </div>
       ) : (
-        <div className={catalogStyles.tableScroll}>
+        <div className={catalogStyles.tableScroll} role="region" aria-label="Draft items" tabIndex={0}>
           <table className={catalogStyles.table}>
             <caption className={catalogStyles.srOnly}>Draft items</caption>
             <thead>
@@ -223,7 +223,7 @@ function DraftEditor({ latest }: { latest: Order }) {
                         </strong>
                       )}
                     </td>
-                    <td>{line.sku}</td>
+                    <td className={styles.sku}>{line.sku}</td>
                     <td className={styles.number}>{formatPrice(line.unitPriceMinor)}</td>
                     <td>
                       <label className={catalogStyles.srOnly} htmlFor={`quantity-${line.variantId}`}>
@@ -368,7 +368,7 @@ function StaffReview({ order }: { order: Order }) {
 
   return (
     <>
-      <div className={catalogStyles.tableScroll}>
+      <div className={catalogStyles.tableScroll} role="region" aria-label="Ordered items and current stock" tabIndex={0}>
         <table className={catalogStyles.table}>
           <caption className={catalogStyles.srOnly}>Ordered items and current stock</caption>
           <thead>
@@ -392,7 +392,7 @@ function StaffReview({ order }: { order: Order }) {
                       {languageLabel(line.language)} · {line.edition} · {formatPrice(line.unitPriceMinor)} each
                     </small>
                   </td>
-                  <td>{line.sku}</td>
+                  <td className={styles.sku}>{line.sku}</td>
                   <td className={styles.number}>{line.quantity}</td>
                   <td className={styles.number} data-test="order-line-available">
                     {available}
@@ -506,7 +506,7 @@ function FrozenOrder({ order, canCancel }: { order: Order; canCancel: boolean })
   const reserved = order.lines.some((line) => line.reservedQuantity !== null);
   return (
     <>
-      <div className={catalogStyles.tableScroll}>
+      <div className={catalogStyles.tableScroll} role="region" aria-label="Ordered items" tabIndex={0}>
         <table className={catalogStyles.table}>
           <caption className={catalogStyles.srOnly}>Ordered items</caption>
           <thead>
@@ -528,7 +528,7 @@ function FrozenOrder({ order, canCancel }: { order: Order; canCancel: boolean })
                     {languageLabel(line.language)} · {line.edition}
                   </small>
                 </td>
-                <td>{line.sku}</td>
+                <td className={styles.sku}>{line.sku}</td>
                 <td className={styles.number}>{formatPrice(line.unitPriceMinor)}</td>
                 <td className={styles.number} data-test="order-line-quantity">
                   {line.quantity}

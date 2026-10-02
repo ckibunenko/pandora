@@ -56,6 +56,7 @@ try {
     await login("admin@pandora.test");
     await click("[data-test=audit-nav]");
     await waitFor(`!!${q("[data-test=audit-row]")}`, "audit list");
+    assert.equal(await evaluate(`getComputedStyle(${q("[data-test=audit-filters]")}).display`), "grid");
     assert.equal(await text("[data-test=audit-total]"), `${expectedPage1.total} events`);
     assert.deepEqual(await rowIds("[data-test=audit-row]", "data-event-id"), expectedPage1.items.map((event) => event.id));
     assert.equal(await evaluate(`${q("[data-test=audit-previous]")}.disabled`), true);
@@ -153,6 +154,50 @@ try {
       const fifty = await admin(`${test.api}&pageSize=50`);
       assert.deepEqual(await rowIds(`[data-test=${test.row}]`, test.attribute), fifty.items.map(test.getId));
     }
+  });
+
+  await check("order empty states preserve useful context and recover without losing list settings", async () => {
+    await navigate("/orders?status=rejected&returns=open&pageSize=50&sort=submitted_asc");
+    await waitFor(`${q("[data-test=orders-total]")}?.textContent === "0 orders"`, "no matching orders");
+    assert.equal(await text("main h2"), "No orders match these filters");
+    assert.match(await text("main"), /Try a different status or return filter/);
+    assert.ok(!(await text("main")).includes("No retailer has created an order."));
+    await evaluate(`[...document.querySelectorAll("main button")].find((button) => button.textContent.trim() === "Clear filters").click()`);
+    await waitFor(`!!${q("[data-test=order-row]")}`, "orders after clearing filters");
+    assert.equal(await evaluate('new URLSearchParams(location.search).get("pageSize")'), "50");
+    assert.equal(await evaluate('new URLSearchParams(location.search).get("sort")'), "submitted_asc");
+    assert.equal(await evaluate('new URLSearchParams(location.search).has("status") || new URLSearchParams(location.search).has("returns")'), false);
+
+    await navigate("/orders?status=draft&page=999&pageSize=50");
+    await waitFor(`${q("[data-test=orders-page]")}?.textContent.includes("Page 999")`, "empty page");
+    assert.equal(await text("main h2"), "No orders on this page");
+    await evaluate(`[...document.querySelectorAll("main button")].find((button) => button.textContent.trim() === "Return to first page").click()`);
+    await waitFor(`!!${q("[data-test=order-row]")} && ${q("[data-test=orders-page]")}?.textContent.includes("Page 1")`, "first page recovery");
+    assert.equal(await evaluate('new URLSearchParams(location.search).get("status")'), "draft");
+    assert.equal(await evaluate('new URLSearchParams(location.search).get("pageSize")'), "50");
+  });
+
+  await check("skip link moves keyboard focus to content; narrow tables scroll from a named region", async () => {
+    await navigate("/inventory");
+    await waitFor(`!!${q("[data-test=inventory-row]")}`, "inventory list");
+    await page.pressTab();
+    assert.equal(await evaluate("document.activeElement?.textContent.trim()"), "Skip to content");
+    assert.notEqual(await evaluate("getComputedStyle(document.activeElement).outlineStyle"), "none");
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
+    assert.equal(await evaluate("document.activeElement?.id"), "main-content");
+    await setWidth(390);
+    await evaluate('document.querySelector("main [role=region]").focus()');
+    assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'), "Inventory by SKU");
+    assert.ok(await evaluate("document.activeElement.scrollWidth > document.activeElement.clientWidth"));
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+    await waitFor("document.activeElement.scrollLeft > 0", "keyboard scroll");
+    assert.ok(await noHorizontalOverflow());
+    await navigate("/admin/catalog");
+    await waitFor(`!!${q("[data-test=product-row]")}`, "narrow catalog management");
+    assert.ok(await noHorizontalOverflow(), "catalog table caption must not extend the page");
+    await setWidth(1280);
   });
 
   await check("keyboard and 390px: audit filters, detail and pagination remain usable without page overflow", async () => {

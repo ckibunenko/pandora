@@ -35,6 +35,14 @@ export function OrdersPage() {
     if (key !== "page") next.delete("page");
     setParams(next);
   }
+  const hasFilters = !!(params.get("status") || params.get("returns"));
+  function clearFilters() {
+    const next = new URLSearchParams(params);
+    next.delete("status");
+    next.delete("returns");
+    next.delete("page");
+    setParams(next);
+  }
 
   return (
     <>
@@ -112,17 +120,32 @@ export function OrdersPage() {
           </p>
           {!orders.data.items.length ? (
             <div className={catalogStyles.empty}>
-              <h2>{params.get("status") || params.get("returns") ? "No orders match these filters" : "No orders yet"}</h2>
+              <h2>{orders.data.total > 0 ? "No orders on this page" : hasFilters ? "No orders match these filters" : "No orders yet"}</h2>
               <p>
-                {params.get("status") === "submitted" && !canEdit
-                  ? "Nothing is waiting for a decision."
-                  : canEdit
-                    ? "Create a draft or add items from the catalog."
-                    : "No retailer has created an order."}
+                {orders.data.total > 0
+                  ? "Return to the first page to see orders in this list."
+                  : hasFilters
+                    ? params.get("status") === "submitted" && !canEdit && !params.get("returns")
+                      ? "Nothing is waiting for a decision."
+                      : "Try a different status or return filter."
+                    : canEdit
+                      ? "Create a draft or add items from the catalog."
+                      : "No retailer has created an order."}
               </p>
+              {orders.data.total > 0 ? (
+                <button className={catalogStyles.secondary} onClick={() => change("page", "1")}>
+                  Return to first page
+                </button>
+              ) : hasFilters ? (
+                <button className={catalogStyles.secondary} onClick={clearFilters}>
+                  Clear filters
+                </button>
+              ) : canEdit ? (
+                <Link className={catalogStyles.secondary} to="/catalog">Browse catalog</Link>
+              ) : null}
             </div>
           ) : (
-            <div className={catalogStyles.tableScroll}>
+            <div className={catalogStyles.tableScroll} role="region" aria-label="Orders" tabIndex={0}>
               <table className={catalogStyles.table}>
                 <caption className={catalogStyles.srOnly}>Orders, {params.get("sort") === "submitted_asc" ? "oldest submission first" : "newest first"}</caption>
                 <thead>

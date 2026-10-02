@@ -1,3 +1,18 @@
+.skipLink {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-4);
+  z-index: 1;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  transform: translateY(calc(-100% - var(--space-4)));
+}
+.skipLink:focus {
+  transform: translateY(0);
+}
 .header {
   display: flex;
   flex-wrap: wrap;
@@ -21,12 +36,16 @@
 }
 .nav {
   display: flex;
-  gap: var(--space-6);
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
   align-items: center;
 }
 .nav a {
   text-decoration: none;
   color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-min-height);
   padding: var(--space-2) 0;
   white-space: nowrap;
 }
@@ -47,6 +66,7 @@
   color: var(--color-text-muted);
 }
 .page {
+  min-width: 0;
   max-width: 1290px;
   padding: var(--space-8) var(--space-6) 4rem;
   margin: auto;
@@ -88,12 +108,23 @@
   color: var(--color-text-muted);
   font-size: 0.875rem;
 }
+.status {
+  composes: badge from "../../components/StatusBadge.module.css";
+}
+.status[data-active="true"] {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+.status[data-active="false"] {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
 .primary,
 .secondary,
 .textButton {
   font: inherit;
   cursor: pointer;
-  min-height: 44px;
+  min-height: var(--control-min-height);
   display: inline-flex;
   justify-content: center;
   align-items: center;
@@ -143,14 +174,18 @@
     text-decoration: underline;
   }
 }
+.filterSurface {
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
 .filters {
+  composes: filterSurface;
   display: flex;
   align-items: end;
   flex-wrap: wrap;
   gap: var(--space-4);
-  padding: var(--space-6) 0;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
 }
 .filters label,
 .field,
@@ -166,7 +201,7 @@
 }
 .search {
   flex: 1;
-  min-width: 250px;
+  min-width: min(250px, 100%);
 }
 .search > div {
   display: flex;
@@ -177,7 +212,7 @@
 .page select,
 .page textarea {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--control-min-height);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: 0.65rem 0.75rem;
@@ -199,7 +234,7 @@
 .results {
   margin: var(--space-6) 0;
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: 0.875rem;
 }
 .grid {
   display: grid;
@@ -308,8 +343,8 @@
   align-items: center;
   justify-content: end;
   gap: var(--space-4);
-  padding-top: var(--space-8);
-  margin-top: var(--space-8);
+  padding-top: var(--space-4);
+  margin-top: var(--space-6);
   border-top: 1px solid var(--color-border);
   font-size: 0.875rem;
 }
@@ -326,29 +361,43 @@
   padding: 3rem var(--space-4);
   text-align: center;
   color: var(--color-text-muted);
+  margin-top: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 .empty p {
   margin: var(--space-3) 0 var(--space-6);
 }
 .tableScroll {
+  /* Keep absolutely positioned screen-reader captions inside the scroll region. */
+  position: relative;
   overflow: auto;
+  max-width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 .table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
   text-align: left;
   font-size: 0.875rem;
 }
 .table th {
+  background: var(--color-background);
   color: var(--color-text-muted);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  white-space: nowrap;
 }
 .table th,
 .table td {
   padding: var(--space-4) var(--space-3);
   border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
 }
 .table td:first-child {
   min-width: 230px;
@@ -356,6 +405,20 @@
 }
 .table td a {
   text-underline-offset: 3px;
+}
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.table tbody tr:focus-within {
+  background: var(--color-primary-soft);
+}
+@media (hover: hover) {
+  .table tbody tr:hover {
+    background: var(--color-primary-soft);
+  }
+  .nav a:hover {
+    color: var(--color-primary);
+  }
 }
 .back {
   display: inline-block;
@@ -420,6 +483,11 @@
 }
 .form {
   max-width: 640px;
+  min-width: 0;
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
 }
 .form h2,
 .form h3 {
@@ -458,10 +526,18 @@
 }
 .error,
 .success {
-  padding: var(--space-4) 0;
+  margin-block: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-sm);
+  overflow-wrap: anywhere;
+}
+.error {
+  background: var(--color-danger-soft);
 }
 .success {
   color: var(--color-success);
+  background: var(--color-success-soft);
 }
 .fieldError {
   font-size: 0.8rem;
@@ -497,6 +573,7 @@
 }
 .actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
 }
@@ -556,6 +633,9 @@
   .filters > label {
     flex: 1;
     min-width: 125px;
+  }
+  .form {
+    padding: var(--space-4);
   }
   .search {
     flex-basis: 100%;
