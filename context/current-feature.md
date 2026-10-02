@@ -4,14 +4,14 @@ UX/UI improvements within Pandora’s existing warm visual direction, followed b
 
 ## Status
 
-Implemented and verified on `feature/ux-ui-improvements`; second UI/UX/design review complete. The user authorized commit and push on 2026-10-01; on 2026-10-02 the branch was rebased onto `main` after the public demo preparation merged, and its PR is open for review. The user authorized continuing with the proposed direction and requested another UI/UX/design review after implementation (2026-10-01).
+Completed — merged to `main` as `99a34f4` (2026-10-02) through PR #11; CI run `36955894606` passed all 3 jobs. Second UI/UX/design review complete.
 
 ## Scope and decisions
 
 - Preserve existing colors, Georgia/system fonts, artwork, navigation, role access, business behavior, API contracts and selectors.
 - Improve keyboard navigation and table scrolling, filters/pagination, status badges, forms/feedback, sign-in controls, and the specific order empty-state/operator-audit copy issues recorded in the brief.
 - Browser verification on isolated QA resources, relevant existing browser suites, typecheck, lint and build. Record evidence and a severity-ranked second review.
-- Branch originally started at `40be2c8` (public demo preparation). After that merged through PR #10 as `510584f`, the branch was rebased onto `main` (2026-10-02). No hosting or public deployment is authorized by this UI task.
+- Branch originally started at `40be2c8` (public demo preparation). After that merged through PR #10 as `510584f`, `main` was merged into the branch (2026-10-02; the only conflict, this file, kept the UX version). No hosting or public deployment is authorized by this UI task.
 - Implementation and verification happen before requesting commit permission, as required by [ai-interaction.md](ai-interaction.md).
 
 ## Implementation results (2026-10-01)
@@ -59,3 +59,4 @@ Implemented and verified on `feature/ux-ui-improvements`; second UI/UX/design re
 - Notifications (2026-10-01, Phase 3 part 2): transactional outbox for nine business events (one job per active recipient, deduplicated), a separate worker that delivers to a captured Mailpit inbox under a lease with bounded retries, ambiguous-attempt recording, and graceful release; controlled failure adapter outside production; staff diagnostics with redaction for operators and an idempotent, audited manual retry; Mailpit for development, demo, and a separate Bug Lab inbox; demo reset stops/starts the worker. `check:notifications` 12/12, notifications browser 4/4, Docker demo lifecycle 5/5, `check:all` 20/20; CI green on PR #8. Merged to `main` as `1c08d9b`; see [verification](features/notifications-verification.md).
 - Documentation link fix (2026-10-02): 27 relative links in seven `context/features/*.md` files carried a `features/` prefix copied from this file and resolved to missing `context/features/features/…` paths on GitHub; removed the prefix. Link check over all tracked Markdown: 0 broken internal links, 5/5 external links reachable. CI green on PR #9. Merged to `main` as `e33942b`.
 - Public demo preparation (2026-10-02): Caddy HTTPS entry as the only published demo service, `Secure` session cookies, read-only public inbox at `/mail/` (non-GET/HEAD refused with 405), systemd timer for the 03:00 Europe/Belgrade reset, and a provider-independent runbook. Docker demo lifecycle 6/6 over HTTPS; CI green on PR #10. Merged to `main` as `510584f`; hosting remains undecided. See [specification and results](features/public-demo-prep.md).
+- UX/UI improvements (2026-10-02): shared table/filter/form/feedback treatments, text status badges, 44px controls, keyboard skip link and named scrolling table regions, corrected order empty-state recovery and operator audit copy, within the existing visual direction and with all selectors preserved. Browser regression 8/8 groups, visual matrix 49/49 at 1440/768/390 px; CI green on PR #11. Merged to `main` as `99a34f4`; see [verification](features/ux-ui-verification.md) and [second review](features/ux-ui-second-review.md). Follow-up proposals are recorded, not implemented.

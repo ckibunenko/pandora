@@ -6,9 +6,9 @@ Specification and source review completed on 2026-10-01 at `40be2c8`.
 The user authorized continuing with the proposed visual direction and requested
 a second UI/UX/design review after implementation (2026-10-01). Implementation,
 verification and the second review are complete locally on
-`feature/ux-ui-improvements`; the user authorized commit and push on 2026-10-01.
-PR/merge remain pending. Public demo preparation is preserved in
-[public-demo-prep.md](public-demo-prep.md); its PR/merge and deployment remain pending.
+`feature/ux-ui-improvements` and merged to `main` as `99a34f4` through PR #11
+(2026-10-02). Public demo preparation merged earlier through PR #10 (`510584f`);
+see [public-demo-prep.md](public-demo-prep.md). Deployment remains pending.
 
 ## Product baseline
 
